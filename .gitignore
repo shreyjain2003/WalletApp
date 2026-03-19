@@ -1,0 +1,20 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.log
+appsettings.Development.json
+
+# Angular
+wallet-app/node_modules/
+wallet-app/dist/
+wallet-app/.angular/
+
+# Secrets — never commit these
+appsettings.json
+
+# IDE
+.vscode/
+*.DS_Store
