@@ -95,4 +95,30 @@ public class AuthController : ControllerBase
 
         return Ok(result);
     }
+
+    // ── GET /api/auth/internal/users ─────────────────────────────────────
+    // Internal endpoint — called by AdminService only
+    [HttpGet("internal/users")]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        var users = await _db.Users
+            .Include(u => u.KycDocument)
+            .Where(u => u.Role == "User")
+            .OrderByDescending(u => u.CreatedAt)
+            .Select(u => new UserProfileResponse(
+                u.Id, u.FullName, u.Email,
+                u.PhoneNumber, u.Status, u.Role,
+                u.KycDocument == null ? null : new KycResponse(
+                    u.KycDocument.Id,
+                    u.KycDocument.DocumentType,
+                    u.KycDocument.DocumentNumber,
+                    u.KycDocument.Status,
+                    u.KycDocument.AdminNote,
+                    u.KycDocument.SubmittedAt,
+                    u.KycDocument.ReviewedAt
+                )))
+            .ToListAsync();
+
+        return Ok(new ApiResponse<List<UserProfileResponse>>(true, "OK", users));
+    }
 }

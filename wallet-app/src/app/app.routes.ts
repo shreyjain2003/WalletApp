@@ -91,5 +91,12 @@ export const routes: Routes = [
         .then(m => m.SupportComponent),
     canActivate: [authGuard]
   },
+  {
+    path: 'admin/users',
+    loadComponent: () =>
+      import('./features/admin/user-list/user-list')
+        .then(m => m.UserListComponent),
+    canActivate: [adminGuard]
+  },
   { path: '**', redirectTo: 'login' }
 ];

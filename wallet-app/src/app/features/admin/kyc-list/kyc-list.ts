@@ -24,6 +24,7 @@ import { ApiService } from '../../../core/services/api';
         <span class="brand">🔐 Admin Panel</span>
         <button mat-button routerLink="/admin/tickets">Tickets</button>
         <button mat-button (click)="logout()">Logout</button>
+        <button mat-button routerLink="/admin/users">Users</button>
       </div>
 
       <div class="content">

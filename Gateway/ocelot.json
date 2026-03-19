@@ -251,6 +251,18 @@
           "Port": 5125
         }
       ]
+    },
+    {
+      "UpstreamPathTemplate": "/api/auth/internal/users",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/api/auth/internal/users",
+      "DownstreamScheme": "https",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 7264
+        }
+      ]
     }
   ],
   "GlobalConfiguration": {
