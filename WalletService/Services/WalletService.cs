@@ -93,6 +93,14 @@ public class WalletService : IWalletService
         if (req.Amount <= 0)
             return new ApiResponse<WalletResponse>(false, "Amount must be greater than 0.", null);
 
+        // ── KYC CHECK ─────────────────────────────────────────────────────
+        var userStatus = await GetUserStatusAsync(userId);
+        if (userStatus != "Active")
+            return new ApiResponse<WalletResponse>(
+                false,
+                "Your KYC is not approved yet. Please complete KYC verification to use wallet services.",
+                null);
+
         var wallet = await _db.Wallets
             .FirstOrDefaultAsync(w => w.UserId == userId);
 
@@ -148,6 +156,14 @@ public class WalletService : IWalletService
 
         if (req.ReceiverUserId == userId)
             return new ApiResponse<WalletResponse>(false, "Cannot transfer to yourself.", null);
+
+        // ── KYC CHECK ─────────────────────────────────────────────────────
+        var userStatus = await GetUserStatusAsync(userId);
+        if (userStatus != "Active")
+            return new ApiResponse<WalletResponse>(
+                false,
+                "Your KYC is not approved yet. Please complete KYC verification to use wallet services.",
+                null);
 
         var senderWallet = await _db.Wallets
             .FirstOrDefaultAsync(w => w.UserId == userId);
@@ -257,6 +273,35 @@ public class WalletService : IWalletService
         )).ToList();
 
         return new ApiResponse<List<TransactionResponse>>(true, "OK", result);
+    }
+
+    // ── CHECK USER STATUS ─────────────────────────────────────────────────
+    private async Task<string> GetUserStatusAsync(Guid userId)
+    {
+        try
+        {
+            using var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback =
+                    HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            };
+            using var http = new HttpClient(handler);
+            http.BaseAddress = new Uri(_config["AuthService:BaseUrl"]!);
+
+            var response = await http.GetAsync($"/api/auth/internal/user/{userId}");
+            if (!response.IsSuccessStatusCode) return "Unknown";
+
+            var json = await response.Content.ReadAsStringAsync();
+            var data = System.Text.Json.JsonSerializer.Deserialize<AuthUserResponse>(
+                json, new System.Text.Json.JsonSerializerOptions
+                { PropertyNameCaseInsensitive = true });
+
+            return data?.Data?.Status ?? "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
     }
 
     // ── HELPERS ───────────────────────────────────────────────────────────

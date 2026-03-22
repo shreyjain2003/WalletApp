@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api';
+import { AuthService } from '../../core/services/auth';
 
 @Component({
   selector: 'app-profile',
@@ -56,7 +57,6 @@ import { ApiService } from '../../core/services/api';
               <h3>KYC Verification</h3>
             </div>
 
-            <!-- KYC submitted -->
             <div *ngIf="profile?.kyc">
               <div class="kyc-detail">
                 <span class="detail-label">Document Type</span>
@@ -132,89 +132,86 @@ import { ApiService } from '../../core/services/api';
           </mat-card-content>
         </mat-card>
 
+        <!-- Security Card -->
+        <mat-card class="security-card">
+          <mat-card-content>
+            <div class="security-header">
+              <div class="security-icon-wrap" [class.active]="pinSet">
+                <mat-icon>{{ pinSet ? 'lock' : 'lock_open' }}</mat-icon>
+              </div>
+              <div class="security-info">
+                <h3>Transaction PIN</h3>
+                <p class="security-sub">
+                  {{ pinSet ? '🔒 PIN protection is active' : '⚠️ No PIN set — transfers are unprotected' }}
+                </p>
+              </div>
+            </div>
+
+            <a routerLink="/set-pin" style="text-decoration:none">
+              <button mat-raised-button
+                      [color]="pinSet ? 'accent' : 'primary'"
+                      class="full-width security-btn">
+                <mat-icon>{{ pinSet ? 'edit' : 'add_moderator' }}</mat-icon>
+                {{ pinSet ? 'Change PIN' : 'Set PIN Now' }}
+              </button>
+            </a>
+          </mat-card-content>
+        </mat-card>
+
       </div>
     </div>
   `,
   styles: [`
-    .page-container { min-height: 100vh; background: #f5f5f5; }
+    .page-container { min-height: 100vh; background: #f0f2f5; }
     .navbar {
-      display: flex;
-      align-items: center;
-      padding: 8px 16px;
+      display: flex; align-items: center; padding: 8px 16px;
       background: linear-gradient(135deg, #3f51b5 0%, #5c6bc0 100%);
-      color: white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
-    .title { font-size: 18px; font-weight: 500; margin-left: 8px; flex: 1; }
-    .content { padding: 24px; max-width: 600px; margin: 0 auto; }
+    .title { font-size: 18px; font-weight: 600; margin-left: 8px; flex: 1; }
+    .content { padding: 20px 16px; max-width: 600px; margin: 0 auto; }
 
-    .profile-card { margin-bottom: 16px; text-align: center; padding: 16px; }
+    .profile-card { margin-bottom: 16px; text-align: center; padding: 16px; border-radius: 20px !important; }
     .avatar {
-      width: 80px; height: 80px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #3f51b5, #5c6bc0);
-      color: white;
-      font-size: 32px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      width: 80px; height: 80px; border-radius: 50%;
+      background: linear-gradient(135deg, #3f51b5, #7c4dff);
+      color: white; font-size: 32px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
       margin: 0 auto 16px;
+      box-shadow: 0 8px 24px rgba(63,81,181,0.4);
     }
-    .profile-name { margin: 0 0 4px; font-size: 22px; font-weight: 700; }
+    .profile-name  { margin: 0 0 4px; font-size: 22px; font-weight: 700; }
     .profile-email { margin: 0 0 8px; color: #666; font-size: 14px; }
     .profile-phone {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      color: #666;
-      font-size: 14px;
-      margin-bottom: 12px;
+      display: flex; align-items: center; justify-content: center;
+      gap: 4px; color: #666; font-size: 14px; margin-bottom: 12px;
     }
     .profile-phone mat-icon { font-size: 16px; width: 16px; height: 16px; }
 
     .status-badge {
-      display: inline-block;
-      padding: 4px 16px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
+      display: inline-block; padding: 4px 16px;
+      border-radius: 20px; font-size: 12px; font-weight: 600;
     }
     .status-badge.pending  { background: #fff3e0; color: #e65100; }
     .status-badge.active   { background: #e8f5e9; color: #2e7d32; }
     .status-badge.rejected { background: #ffebee; color: #c62828; }
     .status-badge.approved { background: #e8f5e9; color: #2e7d32; }
 
-    .kyc-card { padding: 8px; }
-    .kyc-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
+    .kyc-card { padding: 8px; margin-bottom: 16px; border-radius: 20px !important; }
+    .kyc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
     .kyc-icon { color: #3f51b5; font-size: 28px; width: 28px; height: 28px; }
     .kyc-header h3 { margin: 0; font-size: 18px; }
 
     .kyc-detail {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 0;
-      border-bottom: 1px solid #f0f0f0;
-      margin-bottom: 4px;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid #f0f0f0; margin-bottom: 4px;
     }
     .detail-label { color: #666; font-size: 14px; }
     .detail-value { font-weight: 500; font-size: 14px; }
 
     .kyc-message {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px;
-      border-radius: 8px;
-      margin: 16px 0;
-      font-size: 14px;
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px; border-radius: 8px; margin: 16px 0; font-size: 14px;
     }
     .kyc-message.pending  { background: #fff3e0; color: #e65100; }
     .kyc-message.approved { background: #e8f5e9; color: #2e7d32; }
@@ -222,14 +219,48 @@ import { ApiService } from '../../core/services/api';
     .kyc-message.info     { background: #e3f2fd; color: #1565c0; }
     .kyc-message mat-icon { font-size: 20px; width: 20px; height: 20px; }
 
-    .full-width { width: 100%; margin-bottom: 16px; margin-top: 8px; }
+    .full-width { width: 100%; margin-bottom: 8px; margin-top: 8px; }
     .submit-btn {
-      height: 48px;
-      font-size: 15px !important;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      height: 48px; font-size: 15px !important;
+      display: flex; align-items: center; gap: 8px;
     }
+
+    /* ── Security Card ── */
+    .security-card { padding: 8px; margin-bottom: 24px; border-radius: 20px !important; }
+
+    .security-header {
+      display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
+    }
+
+    .security-icon-wrap {
+      width: 52px; height: 52px; border-radius: 16px;
+      background: #f5f5f8; display: flex;
+      align-items: center; justify-content: center; flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+    .security-icon-wrap mat-icon { font-size: 26px; width: 26px; height: 26px; color: #aaa; }
+    .security-icon-wrap.active { background: linear-gradient(135deg, #3f51b5, #7c4dff); }
+    .security-icon-wrap.active mat-icon { color: white; }
+
+    .security-info h3 { margin: 0 0 4px; font-size: 16px; font-weight: 700; }
+    .security-sub { margin: 0; font-size: 13px; color: #666; }
+
+    .security-btn {
+      height: 48px; font-size: 14px !important;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── Dark Mode ── */
+    :host-context(body.dark) .security-icon-wrap { background: #1e1e30; }
+    :host-context(body.dark) .security-icon-wrap mat-icon { color: #555577; }
+    :host-context(body.dark) .security-info h3 { color: #e8e8f0; }
+    :host-context(body.dark) .security-sub { color: #8888aa; }
+    :host-context(body.dark) .kyc-detail { border-bottom-color: #1e1e30; }
+    :host-context(body.dark) .detail-value { color: #e8e8f0; }
+    :host-context(body.dark) .kyc-header h3 { color: #e8e8f0; }
+    :host-context(body.dark) .profile-name { color: #e8e8f0; }
+    :host-context(body.dark) .profile-email,
+    :host-context(body.dark) .profile-phone { color: #8888aa; }
   `]
 })
 export class ProfileComponent implements OnInit {
@@ -238,11 +269,17 @@ export class ProfileComponent implements OnInit {
   docNumber = '';
   loading = true;
   submitting = false;
+  pinSet = false;
 
-  constructor(private api: ApiService,
-    private snackBar: MatSnackBar) { }
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private snackBar: MatSnackBar
+  ) { }
 
   ngOnInit(): void {
+    const userId = this.auth.getUserId();
+    this.pinSet = !!localStorage.getItem(`wallet_pin_${userId}`);
     this.loadProfile();
   }
 

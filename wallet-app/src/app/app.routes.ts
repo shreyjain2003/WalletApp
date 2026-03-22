@@ -98,5 +98,26 @@ export const routes: Routes = [
         .then(m => m.UserListComponent),
     canActivate: [adminGuard]
   },
+  {
+    path: 'analytics',
+    loadComponent: () =>
+      import('./features/analytics/analytics')
+        .then(m => m.AnalyticsComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'request-money',
+    loadComponent: () =>
+      import('./features/request-money/request-money')
+        .then(m => m.RequestMoneyComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'set-pin',
+    loadComponent: () =>
+      import('./features/set-pin/set-pin')
+        .then(m => m.SetPinComponent),
+    canActivate: [authGuard]
+  },
   { path: '**', redirectTo: 'login' }
 ];

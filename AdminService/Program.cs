@@ -80,4 +80,83 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+// ── Sync missing KYC records on startup ───────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AdminDbContext>();
+        var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+
+        using var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback =
+                HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+        using var http = new HttpClient(handler);
+        http.BaseAddress = new Uri(config["AuthService:BaseUrl"]!);
+
+        var response = await http.GetAsync("/api/auth/internal/users");
+        if (response.IsSuccessStatusCode)
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            var users = System.Text.Json.JsonSerializer.Deserialize<AuthUsersResponse>(
+                json, new System.Text.Json.JsonSerializerOptions
+                { PropertyNameCaseInsensitive = true });
+
+            if (users?.Data != null)
+            {
+                foreach (var user in users.Data)
+                {
+                    if (user.Kyc == null) continue;
+
+                    // Check if already in admin DB
+                    var exists = await db.KycReviews
+                        .AnyAsync(k => k.UserId == user.UserId);
+
+                    if (!exists)
+                    {
+                        db.KycReviews.Add(new AdminService.Models.KycReview
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = user.UserId,
+                            UserFullName = user.FullName,
+                            UserEmail = user.Email,
+                            DocumentType = user.Kyc.DocumentType,
+                            DocumentNumber = user.Kyc.DocumentNumber,
+                            Status = user.Kyc.Status,
+                            SubmittedAt = user.Kyc.SubmittedAt
+                        });
+                    }
+                }
+                await db.SaveChangesAsync();
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"KYC sync warning: {ex.Message}");
+    }
+}
+
 app.Run();
+// Helper records for KYC sync
+public record AuthUsersResponse(bool Success, string Message, List<UserProfileData>? Data);
+public record UserProfileData(
+    Guid UserId,
+    string FullName,
+    string Email,
+    string PhoneNumber,
+    string Status,
+    string Role,
+    KycData? Kyc
+);
+public record KycData(
+    Guid Id,
+    string DocumentType,
+    string DocumentNumber,
+    string Status,
+    string? AdminNote,
+    DateTime SubmittedAt,
+    DateTime? ReviewedAt
+);
