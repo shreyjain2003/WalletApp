@@ -41,3 +41,5 @@ public record ApiResponse<T>(
     string Message,
     T? Data
 );
+public record AdjustWalletRequest(Guid UserId, decimal NewBalance, string Reason);
+public record LockWalletRequest(Guid UserId, bool IsLocked);

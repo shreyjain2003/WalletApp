@@ -13,6 +13,7 @@ public interface IAuthService
     Task<ApiResponse<UserProfileResponse>> GetProfileAsync(Guid userId);
     Task<ApiResponse<UserProfileResponse>> GetUserByEmailAsync(string email);
     Task<ApiResponse<List<UserProfileResponse>>> GetAllUsersAsync();
+    Task<ApiResponse<object>> DeleteUserAsync(Guid userId);
 }
 
 public class AuthService : IAuthService
@@ -207,5 +208,23 @@ public class AuthService : IAuthService
         }).ToList();
 
         return new ApiResponse<List<UserProfileResponse>>(true, "OK", result);
+    }
+    // ── DELETE USER ───────────────────────────────────────────────────────
+    public async Task<ApiResponse<object>> DeleteUserAsync(Guid userId)
+    {
+        var user = await _db.Users
+            .Include(u => u.KycDocument)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null)
+            return new ApiResponse<object>(false, "User not found.", null);
+
+        if (user.KycDocument != null)
+            _db.KycDocuments.Remove(user.KycDocument);
+
+        _db.Users.Remove(user);
+        await _db.SaveChangesAsync();
+
+        return new ApiResponse<object>(true, "User deleted successfully.", null);
     }
 }

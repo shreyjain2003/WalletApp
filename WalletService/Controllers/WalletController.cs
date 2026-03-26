@@ -72,4 +72,21 @@ public class WalletController : ControllerBase
 
         return Ok(result);
     }
+    // ── PUT /api/wallet/admin/adjust ─────────────────────────────────────
+    [HttpPut("admin/adjust")]
+    public async Task<IActionResult> AdjustWallet([FromBody] AdjustWalletRequest req)
+    {
+        var result = await _wallet.AdjustWalletAsync(req);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    // ── PUT /api/wallet/admin/lock ────────────────────────────────────────
+    [HttpPut("admin/lock")]
+    public async Task<IActionResult> LockWallet([FromBody] LockWalletRequest req)
+    {
+        var result = await _wallet.LockWalletAsync(req);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
 }

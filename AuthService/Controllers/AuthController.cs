@@ -84,4 +84,12 @@ public class AuthController : ControllerBase
         var result = await _auth.GetAllUsersAsync();
         return Ok(result);
     }
+    // ── DELETE /api/auth/internal/user/{id} ──────────────────────────────
+    [HttpDelete("internal/user/{id}")]
+    public async Task<IActionResult> DeleteUser(Guid id)
+    {
+        var result = await _auth.DeleteUserAsync(id);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
 }

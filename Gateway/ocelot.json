@@ -263,6 +263,42 @@
           "Port": 7264
         }
       ]
+    },
+    {
+      "UpstreamPathTemplate": "/api/auth/internal/user/{id}",
+      "UpstreamHttpMethod": [ "DELETE" ],
+      "DownstreamPathTemplate": "/api/auth/internal/user/{id}",
+      "DownstreamScheme": "https",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 7264
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/api/wallet/admin/adjust",
+      "UpstreamHttpMethod": [ "PUT" ],
+      "DownstreamPathTemplate": "/api/wallet/admin/adjust",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 5163
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/api/wallet/admin/lock",
+      "UpstreamHttpMethod": [ "PUT" ],
+      "DownstreamPathTemplate": "/api/wallet/admin/lock",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 5163
+        }
+      ]
     }
   ],
   "GlobalConfiguration": {

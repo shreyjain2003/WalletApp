@@ -12,6 +12,8 @@ public interface IWalletService
     Task<ApiResponse<WalletResponse>> TransferAsync(Guid userId, TransferRequest req);
     Task<ApiResponse<List<TransactionResponse>>> GetHistoryAsync(Guid userId);
     Task<ApiResponse<WalletResponse>> GetWalletByEmailAsync(string email);
+    Task<ApiResponse<WalletResponse>> AdjustWalletAsync(AdjustWalletRequest req);
+    Task<ApiResponse<WalletResponse>> LockWalletAsync(LockWalletRequest req);
 }
 
 public class WalletService : IWalletService
@@ -312,9 +314,59 @@ public class WalletService : IWalletService
 
     private static WalletResponse MapWallet(Wallet w) =>
         new(w.Id, w.UserId, w.Balance, w.Currency, w.IsLocked, w.CreatedAt);
+    // ── ADJUST WALLET BALANCE ─────────────────────────────────────────────
+    public async Task<ApiResponse<WalletResponse>> AdjustWalletAsync(AdjustWalletRequest req)
+    {
+        var wallet = await _db.Wallets
+            .FirstOrDefaultAsync(w => w.UserId == req.UserId);
+
+        if (wallet == null)
+            return new ApiResponse<WalletResponse>(false, "Wallet not found.", null);
+
+        wallet.Balance = req.NewBalance;
+        wallet.UpdatedAt = DateTime.UtcNow;
+
+        var tx = new WalletTransaction
+        {
+            Id = Guid.NewGuid(),
+            WalletId = wallet.Id,
+            Type = "admin_adjustment",
+            Amount = req.NewBalance,
+            BalanceAfter = req.NewBalance,
+            Status = "Success",
+            Reference = GenerateReference("ADJ"),
+            Note = req.Reason,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.WalletTransactions.Add(tx);
+        await _db.SaveChangesAsync();
+
+        return new ApiResponse<WalletResponse>(true, "Wallet adjusted.", MapWallet(wallet));
+    }
+
+    // ── LOCK / UNLOCK WALLET ──────────────────────────────────────────────
+    public async Task<ApiResponse<WalletResponse>> LockWalletAsync(LockWalletRequest req)
+    {
+        var wallet = await _db.Wallets
+            .FirstOrDefaultAsync(w => w.UserId == req.UserId);
+
+        if (wallet == null)
+            return new ApiResponse<WalletResponse>(false, "Wallet not found.", null);
+
+        wallet.IsLocked = req.IsLocked;
+        wallet.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        return new ApiResponse<WalletResponse>(
+            true,
+            req.IsLocked ? "Wallet locked." : "Wallet unlocked.",
+            MapWallet(wallet));
+    }
 }
 
 // Helper classes to deserialize AuthService response
 public record AuthUserResponse(bool Success, string Message, AuthUserData? Data);
 public record AuthUserData(Guid UserId, string FullName, string Email,
                            string PhoneNumber, string Status, string Role);
+
