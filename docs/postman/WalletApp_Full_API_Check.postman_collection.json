@@ -1,0 +1,683 @@
+{
+  "info": {
+    "name": "WalletApp Full API Check (Gateway)",
+    "_postman_id": "c8d6f6aa-c5ea-4f8e-b942-6c0f3f7dbb80",
+    "description": "End-to-end API verification collection for WalletApp via API Gateway.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:5000" },
+    { "key": "user1_email", "value": "testuser1@example.com" },
+    { "key": "user2_email", "value": "testuser2@example.com" },
+    { "key": "admin_email", "value": "admin@walletapp.com" },
+    { "key": "password", "value": "Test@123" },
+    { "key": "admin_password", "value": "Admin@123" },
+    { "key": "user1_token", "value": "" },
+    { "key": "user2_token", "value": "" },
+    { "key": "admin_token", "value": "" },
+    { "key": "user1_id", "value": "" },
+    { "key": "user2_id", "value": "" },
+    { "key": "user1_kyc_id", "value": "" },
+    { "key": "user2_kyc_id", "value": "" },
+    { "key": "ticket_id", "value": "" },
+    { "key": "notification_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 Auth - Register/Login",
+      "item": [
+        {
+          "name": "Register User 1",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Test User One\",\n  \"email\": \"{{user1_email}}\",\n  \"phoneNumber\": \"9000000001\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/register"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('user1_token', json.data.token);",
+                  "if (json?.data?.userId) pm.collectionVariables.set('user1_id', json.data.userId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register User 2",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Test User Two\",\n  \"email\": \"{{user2_email}}\",\n  \"phoneNumber\": \"9000000002\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/register"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('user2_token', json.data.token);",
+                  "if (json?.data?.userId) pm.collectionVariables.set('user2_id', json.data.userId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login User 1",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user1_email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('user1_token', json.data.token);",
+                  "if (json?.data?.userId) pm.collectionVariables.set('user1_id', json.data.userId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login User 2",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user2_email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('user2_token', json.data.token);",
+                  "if (json?.data?.userId) pm.collectionVariables.set('user2_id', json.data.userId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('admin_token', json.data.token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 KYC Flow",
+      "item": [
+        {
+          "name": "User 1 Submit KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentType\": \"passport\",\n  \"documentNumber\": \"P-USER1-1001\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/kyc"
+          }
+        },
+        {
+          "name": "User 2 Submit KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user2_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentType\": \"driving_license\",\n  \"documentNumber\": \"DL-USER2-2002\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/kyc"
+          }
+        },
+        {
+          "name": "Admin Get Pending KYC",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/admin/kyc/pending"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "const list = json?.data || [];",
+                  "for (const item of list) {",
+                  "  if (item?.email === pm.collectionVariables.get('user1_email')) pm.collectionVariables.set('user1_kyc_id', item.id);",
+                  "  if (item?.email === pm.collectionVariables.get('user2_email')) pm.collectionVariables.set('user2_kyc_id', item.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin Approve User 1 KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Approved\",\n  \"adminNote\": \"Verified\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/kyc/{{user1_kyc_id}}/decide"
+          }
+        },
+        {
+          "name": "Admin Approve User 2 KYC",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Approved\",\n  \"adminNote\": \"Verified\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/kyc/{{user2_kyc_id}}/decide"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Refresh + Profile",
+      "item": [
+        {
+          "name": "Refresh User 1 Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{base_url}}/api/auth/refresh"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('user1_token', json.data.token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh User 2 Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user2_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{base_url}}/api/auth/refresh"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json?.data?.token) pm.collectionVariables.set('user2_token', json.data.token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User 1 Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/auth/profile"
+          }
+        },
+        {
+          "name": "User 2 Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user2_token}}" }],
+            "url": "{{base_url}}/api/auth/profile"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 PIN APIs",
+      "item": [
+        {
+          "name": "User 1 PIN Status",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/auth/pin/status"
+          }
+        },
+        {
+          "name": "User 1 Set PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPin\": null,\n  \"newPin\": \"1234\",\n  \"confirmPin\": \"1234\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/pin/set"
+          }
+        },
+        {
+          "name": "User 2 Set PIN",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user2_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPin\": null,\n  \"newPin\": \"5678\",\n  \"confirmPin\": \"5678\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/pin/set"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Wallet APIs",
+      "item": [
+        {
+          "name": "User 1 Wallet",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/wallet"
+          }
+        },
+        {
+          "name": "User 1 Topup",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 5000,\n  \"note\": \"Initial topup\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/topup"
+          }
+        },
+        {
+          "name": "User 2 Topup",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user2_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000,\n  \"note\": \"Initial topup\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/topup"
+          }
+        },
+        {
+          "name": "Transfer User1 -> User2 (Valid PIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverUserId\": \"{{user2_id}}\",\n  \"amount\": 700,\n  \"note\": \"Payment for groceries\",\n  \"transactionPin\": \"1234\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/transfer"
+          }
+        },
+        {
+          "name": "User 1 Wallet History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/wallet/history"
+          }
+        },
+        {
+          "name": "User 1 Wallet Export CSV",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/wallet/history/export/csv"
+          }
+        },
+        {
+          "name": "User 1 Wallet Export PDF",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/wallet/history/export/pdf"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Rewards + Notifications",
+      "item": [
+        {
+          "name": "User 1 Rewards",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/rewards"
+          }
+        },
+        {
+          "name": "User 1 Reward History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/rewards/history"
+          }
+        },
+        {
+          "name": "User 2 Notifications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user2_token}}" }],
+            "url": "{{base_url}}/api/notifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "const list = json?.data || [];",
+                  "const unread = list.find(x => x && x.isRead === false);",
+                  "if (unread?.id) pm.collectionVariables.set('notification_id', unread.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User 2 Mark Notification Read",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user2_token}}" }],
+            "url": "{{base_url}}/api/notifications/{{notification_id}}/read"
+          }
+        },
+        {
+          "name": "User 1 Send Money Request Notification to User 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientUserId\": \"{{user2_id}}\",\n  \"amount\": 250,\n  \"note\": \"Dinner split\"\n}"
+            },
+            "url": "{{base_url}}/api/notifications/request-money"
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Admin Wallet + Ticket",
+      "item": [
+        {
+          "name": "Admin Adjust User 1 Wallet",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user1_id}}\",\n  \"newBalance\": 6000,\n  \"reason\": \"Manual correction\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/admin/adjust"
+          }
+        },
+        {
+          "name": "Admin Lock User 1 Wallet",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user1_id}}\",\n  \"isLocked\": true\n}"
+            },
+            "url": "{{base_url}}/api/wallet/admin/lock"
+          }
+        },
+        {
+          "name": "Admin Unlock User 1 Wallet",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user1_id}}\",\n  \"isLocked\": false\n}"
+            },
+            "url": "{{base_url}}/api/wallet/admin/lock"
+          }
+        },
+        {
+          "name": "User 1 Submit Support Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Transfer issue\",\n  \"message\": \"Need help with a failed transfer.\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/tickets/submit"
+          }
+        },
+        {
+          "name": "User 1 My Tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user1_token}}" }],
+            "url": "{{base_url}}/api/admin/tickets/my"
+          }
+        },
+        {
+          "name": "Admin List Tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/admin/tickets"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "const list = json?.data || [];",
+                  "if (list.length > 0 && list[0]?.id) pm.collectionVariables.set('ticket_id', list[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin Reply Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"We have reviewed your issue.\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/tickets/{{ticket_id}}/reply"
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Negative Tests",
+      "item": [
+        {
+          "name": "Transfer Without PIN (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverUserId\": \"{{user2_id}}\",\n  \"amount\": 100,\n  \"note\": \"No PIN\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/transfer"
+          }
+        },
+        {
+          "name": "Transfer Wrong PIN (Should Fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverUserId\": \"{{user2_id}}\",\n  \"amount\": 100,\n  \"note\": \"Wrong PIN\",\n  \"transactionPin\": \"9999\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/transfer"
+          }
+        },
+        {
+          "name": "Refresh Without Token (Should 401)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{base_url}}/api/auth/refresh"
+          }
+        },
+        {
+          "name": "User Calls Admin Wallet Adjust (Should 403)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{user1_token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user1_id}}\",\n  \"newBalance\": 9999,\n  \"reason\": \"Unauthorized test\"\n}"
+            },
+            "url": "{{base_url}}/api/wallet/admin/adjust"
+          }
+        }
+      ]
+    }
+  ]
+}

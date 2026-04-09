@@ -1,0 +1,216 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Calibri;}{\f1 Consolas;}}
+\fs24
+\b WalletApp Architecture Diagrams\b0\par
+\par
+This document contains key system diagrams for the WalletApp project. Each section includes a short explanation and a Mermaid definition that can be rendered in Mermaid-enabled tools.\par
+\par
+\b 1) Authentication Diagram\b0\par
+Purpose: Shows login/register, JWT issuance, and token-based authorization across gateway and services.\par
+\f1
+```mermaid\par
+flowchart LR\par
+  U["User/Admin (Frontend Angular)"] --> G["API Gateway (Ocelot)"]\par
+  G --> A["AuthService API"]\par
+  A --> DB[(AuthDB: Users, KYC)]\par
+  A --> T["TokenService (JWT)"]\par
+  T --> A\par
+  A --> G\par
+  G --> U\par
+\par
+  U -->|"Authorization: Bearer <JWT>"| G\par
+  G -->|"forward token"| W["WalletService / Other Services"]\par
+  W -->|"validate JWT claims"| W\par
+```\par
+\f0
+\par
+\b 2) HLD (High-Level Design)\b0\par
+Purpose: Shows macro architecture of frontend, gateway, microservices, databases, RabbitMQ, and SMTP.\par
+\f1
+```mermaid\par
+flowchart TB\par
+  FE["Frontend (Angular)"] --> GW["Gateway (Ocelot)"]\par
+\par
+  GW --> AUTH["AuthService"]\par
+  GW --> WAL["WalletService"]\par
+  GW --> ADM["AdminService"]\par
+  GW --> REW["RewardService"]\par
+  GW --> NOTI["NotificationService"]\par
+\par
+  AUTH --> AUTHDB[(AuthDB)]\par
+  WAL --> WALDB[(WalletDB)]\par
+  ADM --> ADMDB[(AdminDB)]\par
+  REW --> REWDB[(RewardDB)]\par
+  NOTI --> NOTIDB[(NotificationDB)]\par
+\par
+  AUTH --> MQ[(RabbitMQ)]\par
+  WAL --> MQ\par
+  ADM --> MQ\par
+  REW --> MQ\par
+  MQ --> NOTI\par
+\par
+  NOTI --> SMTP["SMTP (Official App Email)"]\par
+```\par
+\f0
+\par
+\b 3) ERD (Entity Relationship Diagram)\b0\par
+Purpose: Defines core data entities and database relationships (users, wallets, transactions, notifications, tickets, rewards).\par
+\f1
+```mermaid\par
+erDiagram\par
+  USERS ||--o| KYC_DOCUMENTS : has\par
+  USERS ||--|| WALLETS : owns\par
+  WALLETS ||--o{ WALLET_TRANSACTIONS : records\par
+  WALLETS ||--o{ WALLET_TRANSACTIONS : target_wallet\par
+  USERS ||--|| REWARD_WALLETS : owns\par
+  REWARD_WALLETS ||--o{ REWARD_TRANSACTIONS : records\par
+  USERS ||--o{ NOTIFICATIONS : receives\par
+  USERS ||--o{ TICKETS : creates\par
+  ADMINS ||--o{ TICKET_REPLIES : posts\par
+  TICKETS ||--o{ TICKET_REPLIES : has\par
+```\par
+\f0
+\par
+\b 4) ER Diagram (Relationship Summary)\b0\par
+Purpose: Compact relationship-only view for quick understanding.\par
+\f1
+```mermaid\par
+flowchart LR\par
+  USERS -->|"1:1"| WALLETS\par
+  USERS -->|"1:0..1"| KYC_DOCUMENTS\par
+  WALLETS -->|"1:N"| WALLET_TRANSACTIONS\par
+  USERS -->|"1:1"| REWARD_WALLETS\par
+  REWARD_WALLETS -->|"1:N"| REWARD_TRANSACTIONS\par
+  USERS -->|"1:N"| NOTIFICATIONS\par
+  USERS -->|"1:N"| TICKETS\par
+  TICKETS -->|"1:N"| TICKET_REPLIES\par
+  ADMINS -->|"1:N"| TICKET_REPLIES\par
+```\par
+\f0
+\par
+\b 5) UML (Layered Service Structure)\b0\par
+Purpose: Shows layering and dependency direction (Controller -> Service -> Repository).\par
+\f1
+```mermaid\par
+classDiagram\par
+  class AuthController\par
+  class IAuthService\par
+  class AuthService\par
+  class IAuthRepository\par
+  class AuthRepository\par
+  class ITransactionPinRepository\par
+  class TransactionPinRepository\par
+  class ITokenService\par
+  class TokenService\par
+\par
+  class WalletController\par
+  class IWalletService\par
+  class WalletService\par
+  class IWalletRepository\par
+  class WalletRepository\par
+\par
+  class NotificationController\par
+  class INotificationService\par
+  class NotificationService\par
+  class IEmailNotificationService\par
+  class EmailNotificationService\par
+\par
+  AuthController --> IAuthService\par
+  IAuthService <|.. AuthService\par
+  AuthService --> IAuthRepository\par
+  IAuthRepository <|.. AuthRepository\par
+  AuthService --> ITransactionPinRepository\par
+  ITransactionPinRepository <|.. TransactionPinRepository\par
+  AuthService --> ITokenService\par
+  ITokenService <|.. TokenService\par
+\par
+  WalletController --> IWalletService\par
+  IWalletService <|.. WalletService\par
+  WalletService --> IWalletRepository\par
+  IWalletRepository <|.. WalletRepository\par
+\par
+  NotificationController --> INotificationService\par
+  INotificationService <|.. NotificationService\par
+  NotificationService --> IEmailNotificationService\par
+  IEmailNotificationService <|.. EmailNotificationService\par
+```\par
+\f0
+\par
+\b 6) RabbitMQ Flow Diagram\b0\par
+Purpose: Describes event producers, broker queues/exchanges, and consumers.\par
+\f1
+```mermaid\par
+flowchart LR\par
+  AUTH["AuthService"] -->|"notifications, kyc events"| MQ[(RabbitMQ)]\par
+  WAL["WalletService"] -->|"wallet_transfer, wallet_topup, notifications"| MQ\par
+  ADM["AdminService"] -->|"kyc decisions / admin events"| MQ\par
+  REW["RewardService"] -->|"reward events"| MQ\par
+\par
+  MQ --> NC["NotificationConsumer"]\par
+  MQ --> KC["KycDecisionConsumer (Auth side)"]\par
+  MQ --> RC["Reward Consumer"]\par
+\par
+  NC --> NOTI["NotificationService DB Save"]\par
+  NC --> EMAIL["EmailNotificationService -> SMTP"]\par
+```\par
+\f0
+\par
+\b 7) Data Flow Diagram (Level 1)\b0\par
+Purpose: Shows how user/admin actions move through processes and data stores.\par
+\f1
+```mermaid\par
+flowchart TB\par
+  USER["End User"] --> P1["P1: Authenticate & KYC"]\par
+  ADMIN["Admin"] --> P2["P2: KYC Review & Admin Ops"]\par
+  USER --> P3["P3: Wallet Ops (Topup/Transfer/History)"]\par
+  USER --> P4["P4: Rewards & Notifications"]\par
+\par
+  P1 --> D1[(AuthDB)]\par
+  P2 --> D1\par
+  P2 --> D3[(AdminDB)]\par
+  P3 --> D2[(WalletDB)]\par
+  P4 --> D4[(RewardDB)]\par
+  P4 --> D5[(NotificationDB)]\par
+\par
+  P1 --> MQ[(RabbitMQ)]\par
+  P2 --> MQ\par
+  P3 --> MQ\par
+  MQ --> P4\par
+  P4 --> SMTP["Email Provider"]\par
+```\par
+\f0
+\par
+\b 8) Sequence Diagram (Transfer with PIN + Email)\b0\par
+Purpose: Step-by-step flow of secure transfer with PIN validation and email notification.\par
+\f1
+```mermaid\par
+sequenceDiagram\par
+  actor U as User\par
+  participant FE as Frontend\par
+  participant GW as Gateway\par
+  participant WS as WalletService\par
+  participant AS as AuthService\par
+  participant MQ as RabbitMQ\par
+  participant NS as NotificationService\par
+  participant SMTP as SMTP\par
+\par
+  U->>FE: Enter transfer + PIN\par
+  FE->>GW: POST /api/wallet/transfer\par
+  GW->>WS: Forward request\par
+  WS->>AS: POST /internal/user/{id}/pin/verify\par
+  AS-->>WS: PIN valid\par
+  WS->>WS: Debit sender / credit receiver\par
+  WS->>MQ: Publish transfer + notification events\par
+  WS-->>GW: Transfer success\par
+  GW-->>FE: Response success\par
+  MQ->>NS: Consume notification event\par
+  NS->>SMTP: Send email (includes sender/recipient name)\par
+  SMTP-->>U: Transaction email delivered\par
+```\par
+\f0
+\par
+\b Notes\b0\par
+1. Mermaid diagrams render best in Markdown tools that support Mermaid directly.\par
+2. In Word, these are included as source definitions for documentation and review.\par
+3. If needed, convert Mermaid blocks to images and replace each code block with exported visuals in this same document.\par
+}

@@ -8,9 +8,9 @@ obj/
 appsettings.Development.json
 
 # Angular
-wallet-app/node_modules/
-wallet-app/dist/
-wallet-app/.angular/
+frontend/wallet-app/node_modules/
+frontend/wallet-app/dist/
+frontend/wallet-app/.angular/
 
 # Secrets — never commit these
 appsettings.json

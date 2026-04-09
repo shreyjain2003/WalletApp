@@ -1,8 +1,9 @@
 <Solution>
-  <Project Path="AdminService/AdminService.csproj" />
-  <Project Path="AuthService/AuthService.csproj" />
-  <Project Path="Gateway/Gateway.csproj" />
-  <Project Path="NotificationService/NotificationService.csproj" />
-  <Project Path="RewardService/RewardService.csproj" />
-  <Project Path="WalletService/WalletService.csproj" />
+  <Project Path="backend/AdminService/AdminService.csproj" />
+  <Project Path="backend/AuthService/AuthService.csproj" />
+  <Project Path="backend/Gateway/Gateway.csproj" />
+  <Project Path="backend/NotificationService/NotificationService.csproj" />
+  <Project Path="backend/RewardService/RewardService.csproj" />
+  <Project Path="backend/WalletService/WalletService.csproj" />
+  <Project Path="backend/tests/WalletApp.UnitTests/WalletApp.UnitTests.csproj" />
 </Solution>
