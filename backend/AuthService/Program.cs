@@ -1,4 +1,5 @@
 using AuthService.Data;
+using AuthService.Middleware;
 using AuthService.Repositories;
 using AuthService.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -101,12 +102,51 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// ── Ensure TransactionPins table exists (created outside EF migrations) ───
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync(@"
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_NAME = 'TransactionPins'
+            )
+            BEGIN
+                CREATE TABLE [TransactionPins] (
+                    [UserId]    UNIQUEIDENTIFIER NOT NULL,
+                    [PinHash]   NVARCHAR(200)    NOT NULL,
+                    [CreatedAt] DATETIME2        NOT NULL DEFAULT GETUTCDATE(),
+                    [UpdatedAt] DATETIME2        NOT NULL DEFAULT GETUTCDATE(),
+                    CONSTRAINT [PK_TransactionPins] PRIMARY KEY ([UserId]),
+                    CONSTRAINT [FK_TransactionPin_User] FOREIGN KEY ([UserId])
+                        REFERENCES [Users] ([Id]) ON DELETE CASCADE
+                );
+            END
+        ");
+
+        // Branding migration: keep existing databases compatible after WalletApp -> Trunqo rename.
+        await db.Database.ExecuteSqlRawAsync(@"
+            UPDATE [Users]
+            SET [Email] = 'admin@trunqo.com'
+            WHERE [Role] = 'Admin'
+              AND LOWER([Email]) = 'admin@walletapp.com'
+        ");
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Failed to ensure TransactionPins table exists.");
+    }
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Order matters — Authentication must come before Authorization
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 app.Run();

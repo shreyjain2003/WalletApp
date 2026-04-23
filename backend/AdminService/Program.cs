@@ -1,4 +1,5 @@
 using AdminService.Data;
+using AdminService.Middleware;
 using AdminService.Repositories;
 using AdminService.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -77,6 +78,7 @@ var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -99,7 +101,7 @@ using (var scope = app.Services.CreateScope())
         http.BaseAddress = new Uri(config["AuthService:BaseUrl"]!);
         http.DefaultRequestHeaders.Add(
             "X-Internal-Api-Key",
-            config["InternalApiKey"] ?? "WalletAppInternalKey");
+            config["InternalApiKey"] ?? "TrunqoInternalKey");
 
         var response = await http.GetAsync("/api/auth/internal/users");
         if (response.IsSuccessStatusCode)

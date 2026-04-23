@@ -19,6 +19,8 @@ public partial class AuthDbContext : DbContext
     public virtual DbSet<KycDocument> KycDocuments { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
+    public virtual DbSet<PasswordResetSession> PasswordResetSessions { get; set; }
+    public virtual DbSet<TransactionPin> TransactionPins { get; set; }
 
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -62,6 +64,41 @@ public partial class AuthDbContext : DbContext
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .HasDefaultValue("Pending");
+        });
+
+        modelBuilder.Entity<PasswordResetSession>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => new { e.UserId, e.Purpose, e.CreatedAtUtc });
+            entity.HasIndex(e => new { e.Purpose, e.OtpExpiresAtUtc });
+
+            entity.Property(e => e.Id).HasDefaultValueSql("(newid())");
+            entity.Property(e => e.Purpose).HasMaxLength(40);
+            entity.Property(e => e.OtpHash).HasMaxLength(200);
+            entity.Property(e => e.ResetTokenHash).HasMaxLength(200);
+            entity.Property(e => e.CreatedAtUtc).HasDefaultValueSql("(getutcdate())");
+
+            entity.HasOne(d => d.User)
+                .WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PasswordResetSession_User");
+        });
+
+        modelBuilder.Entity<TransactionPin>(entity =>
+        {
+            entity.HasKey(e => e.UserId);
+
+            entity.Property(e => e.PinHash).HasMaxLength(200);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(getutcdate())");
+
+            entity.HasOne(d => d.User)
+                .WithOne()
+                .HasForeignKey<TransactionPin>(d => d.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_TransactionPin_User");
         });
 
         OnModelCreatingPartial(modelBuilder);

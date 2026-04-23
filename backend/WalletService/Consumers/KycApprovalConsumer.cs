@@ -47,36 +47,39 @@ public class KycApprovalConsumer : BackgroundService
 
             var consumer = new EventingBasicConsumer(_channel);
 
-            consumer.Received += async (sender, ea) =>
+            consumer.Received += (sender, ea) =>
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    var body = ea.Body.ToArray();
-                    var json = Encoding.UTF8.GetString(body);
-                    var message = JsonSerializer.Deserialize<KycDecisionEvent>(
-                        json, new JsonSerializerOptions
-                        { PropertyNameCaseInsensitive = true });
-
-                    if (message != null && message.Decision == "Approved")
+                    try
                     {
-                        using var scope = _services.CreateScope();
-                        var walletService = scope.ServiceProvider
-                            .GetRequiredService<IWalletService>();
+                        var body = ea.Body.ToArray();
+                        var json = Encoding.UTF8.GetString(body);
+                        var message = JsonSerializer.Deserialize<KycDecisionEvent>(
+                            json, new JsonSerializerOptions
+                            { PropertyNameCaseInsensitive = true });
 
-                        // Auto create wallet for approved user
-                        await walletService.GetOrCreateWalletAsync(message.UserId);
+                        if (message != null && message.Decision == "Approved")
+                        {
+                            using var scope = _services.CreateScope();
+                            var walletService = scope.ServiceProvider
+                                .GetRequiredService<IWalletService>();
 
-                        _logger.LogInformation(
-                            "Wallet auto-created for user {userId}", message.UserId);
+                            // Auto create wallet for approved user
+                            await walletService.GetOrCreateWalletAsync(message.UserId);
+
+                            _logger.LogInformation(
+                                "Wallet auto-created for user {userId}", message.UserId);
+                        }
+
+                        _channel?.BasicAck(ea.DeliveryTag, false);
                     }
-
-                    _channel.BasicAck(ea.DeliveryTag, false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Failed to process KYC event: {msg}", ex.Message);
-                    _channel.BasicNack(ea.DeliveryTag, false, true);
-                }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("Failed to process KYC event: {msg}", ex.Message);
+                        _channel?.BasicNack(ea.DeliveryTag, false, true);
+                    }
+                });
             };
 
             _channel.BasicConsume(

@@ -92,3 +92,36 @@ public record RemovePinRequest(
 public record VerifyPinRequest(
     string Pin
 );
+
+public record ForgotPasswordRequest(
+    [Required, EmailAddress, MaxLength(120)]
+    string Email
+);
+
+public record VerifyPasswordResetOtpRequest(
+    [Required, EmailAddress, MaxLength(120)]
+    string Email,
+    [Required, RegularExpression(@"^\d{6}$",
+        ErrorMessage = "OTP must be exactly 6 digits.")]
+    string Otp
+);
+
+public record VerifyPasswordResetOtpResponse(
+    string ResetToken,
+    DateTime ExpiresAtUtc
+);
+
+public record ResetPasswordRequest(
+    [Required, EmailAddress, MaxLength(120)]
+    string Email,
+    [Required, MinLength(32), MaxLength(256)]
+    string ResetToken,
+    [Required,
+     MinLength(8),
+     MaxLength(64),
+     RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,64}$",
+         ErrorMessage = "Password must have uppercase, lowercase, number, and special character.")]
+    string NewPassword,
+    [Required, MinLength(8), MaxLength(64)]
+    string ConfirmPassword
+);

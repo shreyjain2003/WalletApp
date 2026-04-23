@@ -1,11 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics;
 using System.Security.Claims;
+using WalletService.Common.Exceptions;
 using WalletService.DTOs;
 using WalletService.Services;
-using static System.Net.Mime.MediaTypeNames;
-using static System.Net.WebRequestMethods;
 
 namespace WalletService.Controllers;
 
@@ -22,9 +20,10 @@ public class WalletController : ControllerBase
     }
 
     private Guid CurrentUserId =>
-        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+            ? id
+            : throw new UnauthorizedAppException("Invalid or expired token.");
 
-    // ── GET /api/wallet ───────────────────────────────────────────────────
     [HttpGet]
     public async Task<IActionResult> GetWallet()
     {
@@ -32,27 +31,22 @@ public class WalletController : ControllerBase
         return Ok(result);
     }
 
-    // ── POST /api/wallet/topup ────────────────────────────────────────────
     [HttpPost("topup")]
     public async Task<IActionResult> TopUp([FromBody] TopUpRequest req)
     {
         var result = await _wallet.TopUpAsync(CurrentUserId, req);
-        if (!result.Success)
-            return BadRequest(result);
+        if (!result.Success) throw new AppValidationException(result.Message);
         return Ok(result);
     }
 
-    // ── POST /api/wallet/transfer ─────────────────────────────────────────
     [HttpPost("transfer")]
     public async Task<IActionResult> Transfer([FromBody] TransferRequest req)
     {
         var result = await _wallet.TransferAsync(CurrentUserId, req);
-        if (!result.Success)
-            return BadRequest(result);
+        if (!result.Success) throw new AppValidationException(result.Message);
         return Ok(result);
     }
 
-    // ── GET /api/wallet/history ───────────────────────────────────────────
     [HttpGet("history")]
     public async Task<IActionResult> GetHistory()
     {
@@ -64,7 +58,7 @@ public class WalletController : ControllerBase
     public async Task<IActionResult> ExportHistoryCsv()
     {
         var file = await _wallet.ExportHistoryCsvAsync(CurrentUserId);
-        if (file == null) return NotFound();
+        if (file == null) throw new NotFoundAppException("Wallet history not found.");
         return File(file.Content, file.ContentType, file.FileName);
     }
 
@@ -72,39 +66,36 @@ public class WalletController : ControllerBase
     public async Task<IActionResult> ExportHistoryPdf()
     {
         var file = await _wallet.ExportHistoryPdfAsync(CurrentUserId);
-        if (file == null) return NotFound();
+        if (file == null) throw new NotFoundAppException("Wallet history not found.");
         return File(file.Content, file.ContentType, file.FileName);
     }
 
-    // ── GET /api/wallet/by-email ──────────────────────────────────────────
-    [AllowAnonymous]
+    [Authorize]
     [HttpGet("by-email")]
     public async Task<IActionResult> GetWalletByEmail([FromQuery] string email)
     {
         var result = await _wallet.GetWalletByEmailAsync(email);
 
-        if (!result.Success)
-            return NotFound(result);
+        if (!result.Success) throw new NotFoundAppException(result.Message);
 
         return Ok(result);
     }
-    // ── PUT /api/wallet/admin/adjust ─────────────────────────────────────
+
     [Authorize(Roles = "Admin")]
     [HttpPut("admin/adjust")]
     public async Task<IActionResult> AdjustWallet([FromBody] AdjustWalletRequest req)
     {
         var result = await _wallet.AdjustWalletAsync(req);
-        if (!result.Success) return BadRequest(result);
+        if (!result.Success) throw new AppValidationException(result.Message);
         return Ok(result);
     }
 
-    // ── PUT /api/wallet/admin/lock ────────────────────────────────────────
     [Authorize(Roles = "Admin")]
     [HttpPut("admin/lock")]
     public async Task<IActionResult> LockWallet([FromBody] LockWalletRequest req)
     {
         var result = await _wallet.LockWalletAsync(req);
-        if (!result.Success) return BadRequest(result);
+        if (!result.Success) throw new AppValidationException(result.Message);
         return Ok(result);
     }
 }

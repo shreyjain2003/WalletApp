@@ -1,8 +1,8 @@
-# WalletApp Architecture
+# Trunqo Architecture
 
 ## Frontend
 
-- `frontend/wallet-app/`
+- `frontend/trunqo-app/`
   - Angular standalone application
   - Talks only to the gateway at `http://localhost:5000`
   - Organized by feature under `src/app/features`

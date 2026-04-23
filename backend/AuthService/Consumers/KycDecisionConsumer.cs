@@ -40,44 +40,47 @@ public class KycDecisionConsumer : BackgroundService
             _channel.QueueDeclare(queue: "kyc_decisions", durable: true, exclusive: false, autoDelete: false);
 
             var consumer = new EventingBasicConsumer(_channel);
-            consumer.Received += async (sender, ea) =>
+            consumer.Received += (sender, ea) =>
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    var body = ea.Body.ToArray();
-                    var json = Encoding.UTF8.GetString(body);
-                    var message = JsonSerializer.Deserialize<KycDecisionEvent>(
-                        json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                    if (message != null)
+                    try
                     {
-                        using var scope = _services.CreateScope();
-                        var repo = scope.ServiceProvider.GetRequiredService<IAuthRepository>();
-                        var user = await repo.GetUserByIdAsync(message.UserId, includeKyc: true);
+                        var body = ea.Body.ToArray();
+                        var json = Encoding.UTF8.GetString(body);
+                        var message = JsonSerializer.Deserialize<KycDecisionEvent>(
+                            json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                        if (user != null)
+                        if (message != null)
                         {
-                            var newStatus = message.Decision == "Approved" ? "Active" : "Rejected";
-                            user.Status = newStatus;
-                            if (user.KycDocument != null)
+                            using var scope = _services.CreateScope();
+                            var repo = scope.ServiceProvider.GetRequiredService<IAuthRepository>();
+                            var user = await repo.GetUserByIdAsync(message.UserId, includeKyc: true);
+
+                            if (user != null)
                             {
-                                user.KycDocument.Status = message.Decision;
-                                user.KycDocument.AdminNote = message.AdminNote;
-                                user.KycDocument.ReviewedAt = DateTime.UtcNow;
+                                var newStatus = message.Decision == "Approved" ? "Active" : "Rejected";
+                                user.Status = newStatus;
+                                if (user.KycDocument != null)
+                                {
+                                    user.KycDocument.Status = message.Decision;
+                                    user.KycDocument.AdminNote = message.AdminNote;
+                                    user.KycDocument.ReviewedAt = DateTime.UtcNow;
+                                }
+
+                                await repo.SaveChangesAsync();
+                                _logger.LogInformation("User {userId} status updated to {status}", message.UserId, newStatus);
                             }
-
-                            await repo.SaveChangesAsync();
-                            _logger.LogInformation("User {userId} status updated to {status}", message.UserId, newStatus);
                         }
-                    }
 
-                    _channel.BasicAck(ea.DeliveryTag, false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Failed to process KYC decision: {msg}", ex.Message);
-                    _channel.BasicNack(ea.DeliveryTag, false, true);
-                }
+                        _channel?.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("Failed to process KYC decision: {msg}", ex.Message);
+                        _channel?.BasicNack(ea.DeliveryTag, false, true);
+                    }
+                });
             };
 
             _channel.BasicConsume(queue: "kyc_decisions", autoAck: false, consumer: consumer);
@@ -85,7 +88,6 @@ public class KycDecisionConsumer : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError("RabbitMQ connection failed: {msg}", ex.Message);
             _logger.LogWarning("RabbitMQ unavailable: {msg}", ex.Message);
         }
 

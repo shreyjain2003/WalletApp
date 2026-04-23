@@ -8,9 +8,9 @@ obj/
 appsettings.Development.json
 
 # Angular
-frontend/wallet-app/node_modules/
-frontend/wallet-app/dist/
-frontend/wallet-app/.angular/
+frontend/trunqo-app/node_modules/
+frontend/trunqo-app/dist/
+frontend/trunqo-app/.angular/
 
 # Secrets — never commit these
 appsettings.json

@@ -1,0 +1,68 @@
+<div class="layout-container">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <img src="assets/logo.png?v=2" alt="Trunqo Logo" class="brand-logo" />
+      </div>
+    </div>
+    
+    <nav class="sidebar-nav">
+      <a *ngFor="let item of navItems" [routerLink]="item.route" routerLinkActive="active" class="nav-item">
+        <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
+        <span class="nav-label">{{ item.label }}</span>
+      </a>
+    </nav>
+    
+    <div class="sidebar-footer">
+      <a (click)="logout()" style="cursor:pointer;" class="nav-item logout">
+        <mat-icon class="nav-icon">logout</mat-icon>
+        <span class="nav-label">Logout</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <div class="main-wrapper">
+    <!-- Top Navbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h2 class="page-title">Welcome back, {{ userName.split(' ')[0] }}</h2>
+      </div>
+      <div class="topbar-right">
+        <button class="icon-btn" routerLink="/notifications">
+          <mat-icon>notifications</mat-icon>
+          <span class="badge-dot"></span>
+        </button>
+        <div class="user-profile" [matMenuTriggerFor]="userMenu">
+          <div class="avatar">{{ userInitials }}</div>
+          <div class="user-info">
+            <span class="user-name">{{ userName }}</span>
+            <span class="user-role">Member</span>
+          </div>
+          <mat-icon>expand_more</mat-icon>
+        </div>
+        
+        <mat-menu #userMenu="matMenu">
+          <button mat-menu-item routerLink="/profile">
+            <mat-icon>manage_accounts</mat-icon>
+            <span>My Profile</span>
+          </button>
+          <button mat-menu-item routerLink="/rewards">
+            <mat-icon>workspace_premium</mat-icon>
+            <span>Rewards</span>
+          </button>
+          <button mat-menu-item (click)="logout()">
+            <mat-icon style="color:var(--danger)">logout</mat-icon>
+            <span style="color:var(--danger); font-weight: 500;">Sign Out</span>
+          </button>
+        </mat-menu>
+      </div>
+    </header>
+
+    <!-- Page Content Container -->
+    <main class="content-container fade-in">
+      <router-outlet></router-outlet>
+    </main>
+  </div>
+</div>

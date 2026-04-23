@@ -13,7 +13,7 @@ public class NotificationConsumer : BackgroundService
     private readonly IConfiguration _config;
     private readonly ILogger<NotificationConsumer> _logger;
     private IConnection? _connection;
-    private RabbitMQ.Client.IModel? _channel;
+    private IModel? _channel;
 
     public NotificationConsumer(IServiceProvider services,
                                 IConfiguration config,
@@ -47,68 +47,99 @@ public class NotificationConsumer : BackgroundService
 
             var consumer = new EventingBasicConsumer(_channel);
 
-            consumer.Received += async (sender, ea) =>
+            consumer.Received += (sender, ea) =>
             {
-                try
+                // Offload async work to thread pool; EventingBasicConsumer does not support async void safely
+                _ = Task.Run(async () =>
                 {
-                    var body = ea.Body.ToArray();
-                    var json = Encoding.UTF8.GetString(body);
-                    var message = JsonSerializer.Deserialize<NotificationMessage>(
-                        json, new JsonSerializerOptions
-                        { PropertyNameCaseInsensitive = true });
-
-                    if (message != null)
+                    try
                     {
-                        using var scope = _services.CreateScope();
-                        var notifService = scope.ServiceProvider
-                            .GetRequiredService<INotificationService>();
-                        var emailService = scope.ServiceProvider
-                            .GetRequiredService<IEmailNotificationService>();
+                        var body = ea.Body.ToArray();
+                        var json = Encoding.UTF8.GetString(body);
 
-                        await notifService.SaveAsync(new Notification
+                        // 🔥 Debug log
+                        _logger.LogInformation("Received message: {json}", json);
+
+                        var message = TryParseNotificationMessage(json);
+
+                        if (message != null)
                         {
-                            Id = Guid.NewGuid(),
-                            UserId = message.UserId,
-                            Title = message.Title,
-                            Message = message.Message,
-                            Type = message.Type,
-                            IsRead = false,
-                            CreatedAt = DateTime.UtcNow
-                        });
+                            using var scope = _services.CreateScope();
 
-                        _logger.LogInformation(
-                            "Notification saved for user {userId}", message.UserId);
+                            var notifService = scope.ServiceProvider
+                                .GetRequiredService<INotificationService>();
 
-                        try
-                        {
-                            await emailService.SendNotificationEmailAsync(
-                                message.UserId,
-                                message.Title,
-                                message.Message,
-                                message.Type,
-                                message.Amount,
-                                message.Reference,
-                                message.Note,
-                                message.CounterpartyName,
-                                message.CounterpartyEmail,
-                                message.BalanceAfter,
-                                message.OccurredAtUtc);
+                            var emailService = scope.ServiceProvider
+                                .GetRequiredService<IEmailNotificationService>();
+
+                            // 🔥 OTP FLOW
+                            if (!string.IsNullOrEmpty(message.Otp))
+                            {
+                                await emailService.SendNotificationEmailAsync(
+                                    message.UserId,
+                                    message.Email,
+                                    "OTP Verification",
+                                    "Your OTP",
+                                    otp: message.Otp
+                                );
+
+                                _logger.LogInformation(
+                                    "OTP email sent to user {userId}",
+                                    message.UserId);
+                            }
+                            else
+                            {
+                                // 🔥 NORMAL NOTIFICATION FLOW
+                                await notifService.SaveAsync(new Notification
+                                {
+                                    Id = Guid.NewGuid(),
+                                    UserId = message.UserId,
+                                    Title = message.Title ?? string.Empty,
+                                    Message = message.Message ?? string.Empty,
+                                    Type = message.Type ?? string.Empty,
+                                    IsRead = false,
+                                    CreatedAt = DateTime.UtcNow
+                                });
+
+                                _logger.LogInformation(
+                                    "Notification saved for user {userId}",
+                                    message.UserId);
+
+                                try
+                                {
+                                    await emailService.SendNotificationEmailAsync(
+                                        message.UserId,
+                                        message.Email,
+                                        message.Title ?? string.Empty,
+                                        message.Message ?? string.Empty,
+                                        message.Type,
+                                        message.Amount,
+                                        message.Reference,
+                                        message.Note,
+                                        message.CounterpartyName,
+                                        message.CounterpartyEmail,
+                                        message.BalanceAfter,
+                                        message.OccurredAtUtc
+                                    );
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(
+                                        ex,
+                                        "Notification saved but email failed for {UserId}",
+                                        message.UserId);
+                                }
+                            }
                         }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex,
-                                "Notification was saved but email delivery failed for user {UserId}",
-                                message.UserId);
-                        }
+
+                        _channel?.BasicAck(ea.DeliveryTag, false);
                     }
-
-                    _channel.BasicAck(ea.DeliveryTag, false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Failed to process notification: {msg}", ex.Message);
-                    _channel.BasicNack(ea.DeliveryTag, false, true);
-                }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("Failed to process notification: {msg}", ex.Message);
+                        _channel?.BasicNack(ea.DeliveryTag, false, true);
+                    }
+                });
             };
 
             _channel.BasicConsume(
@@ -132,13 +163,36 @@ public class NotificationConsumer : BackgroundService
         _connection?.Dispose();
         base.Dispose();
     }
+
+    private static NotificationMessage? TryParseNotificationMessage(string json)
+    {
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        // New format: wrapper with Payload
+        var wrapper = JsonSerializer.Deserialize<EventWrapper<NotificationMessage>>(json, options);
+        if (wrapper?.Payload != null)
+            return wrapper.Payload;
+
+        // Backward-compatible format: direct payload
+        return JsonSerializer.Deserialize<NotificationMessage>(json, options);
+    }
 }
 
+public class EventWrapper<T>
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public T? Payload { get; set; }
+    public Guid CorrelationId { get; set; }
+}
 public record NotificationMessage(
     string UserId,
-    string Title,
-    string Message,
-    string Type,
+    string? Title,
+    string? Message,
+    string? Type,
+    string? Email = null,   // ✅ IMPORTANT
+    string? Otp = null,
     decimal? Amount = null,
     string? Reference = null,
     string? Note = null,

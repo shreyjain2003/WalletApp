@@ -42,58 +42,61 @@ public class KycSubmissionConsumer : BackgroundService
             _channel.QueueDeclare(queue: "kyc_submissions", durable: true, exclusive: false, autoDelete: false);
             var consumer = new EventingBasicConsumer(_channel);
 
-            consumer.Received += async (sender, ea) =>
+            consumer.Received += (sender, ea) =>
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    var body = ea.Body.ToArray();
-                    var json = Encoding.UTF8.GetString(body);
-                    var message = JsonSerializer.Deserialize<KycSubmissionEvent>(
-                        json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-                    if (message != null)
+                    try
                     {
-                        using var scope = _services.CreateScope();
-                        var repo = scope.ServiceProvider.GetRequiredService<IAdminRepository>();
-                        var existing = await repo.GetKycReviewByUserIdAsync(message.UserId);
+                        var body = ea.Body.ToArray();
+                        var json = Encoding.UTF8.GetString(body);
+                        var message = JsonSerializer.Deserialize<KycSubmissionEvent>(
+                            json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                        if (existing != null)
+                        if (message != null)
                         {
-                            existing.DocumentType = message.DocumentType;
-                            existing.DocumentNumber = message.DocumentNumber;
-                            existing.Status = "Pending";
-                            existing.AdminNote = null;
-                            existing.ReviewedBy = null;
-                            existing.ReviewedAt = null;
-                            existing.SubmittedAt = message.SubmittedAt;
-                        }
-                        else
-                        {
-                            var review = new KycReview
+                            using var scope = _services.CreateScope();
+                            var repo = scope.ServiceProvider.GetRequiredService<IAdminRepository>();
+                            var existing = await repo.GetKycReviewByUserIdAsync(message.UserId);
+
+                            if (existing != null)
                             {
-                                Id = Guid.NewGuid(),
-                                UserId = message.UserId,
-                                UserFullName = message.FullName,
-                                UserEmail = message.Email,
-                                DocumentType = message.DocumentType,
-                                DocumentNumber = message.DocumentNumber,
-                                Status = "Pending",
-                                SubmittedAt = message.SubmittedAt
-                            };
-                            await repo.AddKycReviewAsync(review);
+                                existing.DocumentType = message.DocumentType;
+                                existing.DocumentNumber = message.DocumentNumber;
+                                existing.Status = "Pending";
+                                existing.AdminNote = null;
+                                existing.ReviewedBy = null;
+                                existing.ReviewedAt = null;
+                                existing.SubmittedAt = message.SubmittedAt;
+                            }
+                            else
+                            {
+                                var review = new KycReview
+                                {
+                                    Id = Guid.NewGuid(),
+                                    UserId = message.UserId,
+                                    UserFullName = message.FullName,
+                                    UserEmail = message.Email,
+                                    DocumentType = message.DocumentType,
+                                    DocumentNumber = message.DocumentNumber,
+                                    Status = "Pending",
+                                    SubmittedAt = message.SubmittedAt
+                                };
+                                await repo.AddKycReviewAsync(review);
+                            }
+
+                            await repo.SaveChangesAsync();
+                            _logger.LogInformation("KYC synced for user {userId}", message.UserId);
                         }
 
-                        await repo.SaveChangesAsync();
-                        _logger.LogInformation("KYC synced for user {userId}", message.UserId);
+                        _channel?.BasicAck(ea.DeliveryTag, false);
                     }
-
-                    _channel.BasicAck(ea.DeliveryTag, false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError("Failed to process KYC submission: {msg}", ex.Message);
-                    _channel.BasicNack(ea.DeliveryTag, false, true);
-                }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError("Failed to process KYC submission: {msg}", ex.Message);
+                        _channel?.BasicNack(ea.DeliveryTag, false, true);
+                    }
+                });
             };
 
             _channel.BasicConsume(queue: "kyc_submissions", autoAck: false, consumer: consumer);

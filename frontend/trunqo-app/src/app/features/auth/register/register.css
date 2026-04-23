@@ -1,0 +1,58 @@
+.register-card {
+  max-width: 520px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.field-group {
+  margin-bottom: 16px;
+}
+
+.toggle-pass {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.toggle-pass:hover {
+  color: var(--teal);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.wa-btn-primary,
+.wa-btn-outline {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .register-card {
+    padding: 28px 20px;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

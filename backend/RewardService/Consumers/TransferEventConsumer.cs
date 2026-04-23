@@ -38,12 +38,17 @@ public class TransferEventConsumer : BackgroundService
             _connection = factory.CreateConnection();
             _channel = _connection.CreateModel();
 
-            // Listen to wallet_transfer queue
-            _channel.QueueDeclare(
-                queue: "wallet_transfer",
+            // Declare fanout exchange for wallet_transfer so all consumers get every message
+            _channel.ExchangeDeclare(exchange: "wallet_transfer_exchange", type: "fanout", durable: true);
+
+            // Exclusive queue for this consumer instance
+            var queueName = _channel.QueueDeclare(
+                queue: "wallet_transfer_rewards",
                 durable: true,
                 exclusive: false,
-                autoDelete: false);
+                autoDelete: false).QueueName;
+
+            _channel.QueueBind(queue: queueName, exchange: "wallet_transfer_exchange", routingKey: "");
 
             var consumer = new EventingBasicConsumer(_channel);
 
@@ -84,7 +89,7 @@ public class TransferEventConsumer : BackgroundService
             };
 
             _channel.BasicConsume(
-                queue: "wallet_transfer",
+                queue: queueName,
                 autoAck: false,
                 consumer: consumer);
 

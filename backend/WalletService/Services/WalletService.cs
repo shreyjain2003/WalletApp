@@ -25,30 +25,37 @@ public class WalletService : IWalletService
     private readonly IWalletRepository _repo;
     private readonly IRabbitMqPublisher _mq;
     private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _httpFactory;
 
-    public WalletService(IWalletRepository repo, IRabbitMqPublisher mq, IConfiguration config)
+    public WalletService(IWalletRepository repo, IRabbitMqPublisher mq, IConfiguration config, IHttpClientFactory httpFactory)
     {
         _repo = repo;
         _mq = mq;
         _config = config;
+        _httpFactory = httpFactory;
     }
 
-    public async Task<ApiResponse<WalletResponse>> GetWalletByEmailAsync(string email)
+    private HttpClient CreateAuthClient()
     {
-        using var handler = new HttpClientHandler
+        var handler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback =
                 HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
         };
-        using var http = new HttpClient(handler)
+        var http = new HttpClient(handler)
         {
             BaseAddress = new Uri(_config["AuthService:BaseUrl"]!)
         };
         http.DefaultRequestHeaders.Add(
             "X-Internal-Api-Key",
-            _config["InternalApiKey"] ?? "WalletAppInternalKey");
+            _config["InternalApiKey"] ?? "TrunqoInternalKey");
+        return http;
+    }
 
-        var response = await http.GetAsync($"/api/auth/internal/user-by-email?email={email}");
+    public async Task<ApiResponse<WalletResponse>> GetWalletByEmailAsync(string email)
+    {
+        using var http = CreateAuthClient();
+        var response = await http.GetAsync($"/api/auth/internal/user-by-email?email={Uri.EscapeDataString(email)}");
         if (!response.IsSuccessStatusCode)
             return new ApiResponse<WalletResponse>(false, "User not found.", null);
 
@@ -100,7 +107,20 @@ public class WalletService : IWalletService
 
         var wallet = await _repo.GetWalletByUserIdAsync(userId);
         if (wallet == null)
-            return new ApiResponse<WalletResponse>(false, "Wallet not found.", null);
+        {
+            wallet = new Wallet
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Balance = 0,
+                Currency = "INR",
+                IsLocked = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _repo.AddWalletAsync(wallet);
+            await _repo.SaveChangesAsync();
+        }
 
         if (wallet.IsLocked)
             return new ApiResponse<WalletResponse>(false, "Wallet is locked.", null);
@@ -183,41 +203,45 @@ public class WalletService : IWalletService
             return new ApiResponse<WalletResponse>(false, "Receiver wallet is locked.", null);
 
         var reference = GenerateReference("TF");
-        senderWallet.Balance -= req.Amount;
-        senderWallet.UpdatedAt = DateTime.UtcNow;
-        receiverWallet.Balance += req.Amount;
-        receiverWallet.UpdatedAt = DateTime.UtcNow;
 
-        var senderTx = new WalletTransaction
+        await _repo.ExecuteInTransactionAsync(async () =>
         {
-            Id = Guid.NewGuid(),
-            WalletId = senderWallet.Id,
-            ToWalletId = receiverWallet.Id,
-            Type = "transfer_out",
-            Amount = req.Amount,
-            BalanceAfter = senderWallet.Balance,
-            Status = "Success",
-            Reference = reference + "-OUT",
-            Note = req.Note,
-            CreatedAt = DateTime.UtcNow
-        };
+            senderWallet.Balance -= req.Amount;
+            senderWallet.UpdatedAt = DateTime.UtcNow;
+            receiverWallet.Balance += req.Amount;
+            receiverWallet.UpdatedAt = DateTime.UtcNow;
 
-        var receiverTx = new WalletTransaction
-        {
-            Id = Guid.NewGuid(),
-            WalletId = receiverWallet.Id,
-            ToWalletId = senderWallet.Id,
-            Type = "transfer_in",
-            Amount = req.Amount,
-            BalanceAfter = receiverWallet.Balance,
-            Status = "Success",
-            Reference = reference + "-IN",
-            Note = req.Note,
-            CreatedAt = DateTime.UtcNow
-        };
+            var senderTx = new WalletTransaction
+            {
+                Id = Guid.NewGuid(),
+                WalletId = senderWallet.Id,
+                ToWalletId = receiverWallet.Id,
+                Type = "transfer_out",
+                Amount = req.Amount,
+                BalanceAfter = senderWallet.Balance,
+                Status = "Success",
+                Reference = reference + "-OUT",
+                Note = req.Note,
+                CreatedAt = DateTime.UtcNow
+            };
 
-        await _repo.AddTransactionsAsync(senderTx, receiverTx);
-        await _repo.SaveChangesAsync();
+            var receiverTx = new WalletTransaction
+            {
+                Id = Guid.NewGuid(),
+                WalletId = receiverWallet.Id,
+                ToWalletId = senderWallet.Id,
+                Type = "transfer_in",
+                Amount = req.Amount,
+                BalanceAfter = receiverWallet.Balance,
+                Status = "Success",
+                Reference = reference + "-IN",
+                Note = req.Note,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _repo.AddTransactionsAsync(senderTx, receiverTx);
+            await _repo.SaveChangesAsync();
+        });
 
         _mq.Publish("wallet_transfer", new
         {
@@ -234,12 +258,12 @@ public class WalletService : IWalletService
             Message = $"Rs. {req.Amount} sent. New balance: Rs. {senderWallet.Balance}",
             Type = "transfer_out",
             Amount = req.Amount,
-            Reference = senderTx.Reference,
+            Reference = reference + "-OUT",
             Note = req.Note,
             CounterpartyName = receiverUser?.FullName ?? "Recipient",
             CounterpartyEmail = receiverUser?.Email,
             BalanceAfter = senderWallet.Balance,
-            OccurredAtUtc = senderTx.CreatedAt
+            OccurredAtUtc = DateTime.UtcNow
         });
 
         _mq.Publish("notifications", new
@@ -249,12 +273,12 @@ public class WalletService : IWalletService
             Message = $"Rs. {req.Amount} received. New balance: Rs. {receiverWallet.Balance}",
             Type = "transfer_in",
             Amount = req.Amount,
-            Reference = receiverTx.Reference,
+            Reference = reference + "-IN",
             Note = req.Note,
             CounterpartyName = senderUser?.FullName ?? "Sender",
             CounterpartyEmail = senderUser?.Email,
             BalanceAfter = receiverWallet.Balance,
-            OccurredAtUtc = receiverTx.CreatedAt
+            OccurredAtUtc = DateTime.UtcNow
         });
 
         return new ApiResponse<WalletResponse>(true, "Transfer successful.", MapWallet(senderWallet));
@@ -329,6 +353,7 @@ public class WalletService : IWalletService
         if (wallet == null)
             return new ApiResponse<WalletResponse>(false, "Wallet not found.", null);
 
+        var delta = req.NewBalance - wallet.Balance;
         wallet.Balance = req.NewBalance;
         wallet.UpdatedAt = DateTime.UtcNow;
 
@@ -337,7 +362,7 @@ public class WalletService : IWalletService
             Id = Guid.NewGuid(),
             WalletId = wallet.Id,
             Type = "admin_adjustment",
-            Amount = req.NewBalance,
+            Amount = delta,
             BalanceAfter = req.NewBalance,
             Status = "Success",
             Reference = GenerateReference("ADJ"),
@@ -383,19 +408,7 @@ public class WalletService : IWalletService
     {
         try
         {
-            using var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback =
-                    HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-            using var http = new HttpClient(handler)
-            {
-                BaseAddress = new Uri(_config["AuthService:BaseUrl"]!)
-            };
-            http.DefaultRequestHeaders.Add(
-                "X-Internal-Api-Key",
-                _config["InternalApiKey"] ?? "WalletAppInternalKey");
-
+            using var http = CreateAuthClient();
             var response = await http.GetAsync($"/api/auth/internal/user/{userId}");
             if (!response.IsSuccessStatusCode)
                 return null;
@@ -416,19 +429,7 @@ public class WalletService : IWalletService
     {
         try
         {
-            using var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback =
-                    HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-            using var http = new HttpClient(handler)
-            {
-                BaseAddress = new Uri(_config["AuthService:BaseUrl"]!)
-            };
-            http.DefaultRequestHeaders.Add(
-                "X-Internal-Api-Key",
-                _config["InternalApiKey"] ?? "WalletAppInternalKey");
-
+            using var http = CreateAuthClient();
             var response = await http.PostAsJsonAsync(
                 $"/api/auth/internal/user/{userId}/pin/verify",
                 new { Pin = pin });
@@ -535,4 +536,3 @@ public record AuthUserResponse(bool Success, string Message, AuthUserData? Data)
 public record AuthUserData(Guid UserId, string FullName, string Email,
                            string PhoneNumber, string Status, string Role);
 public record AuthApiResponse(bool Success, string Message, object? Data);
-

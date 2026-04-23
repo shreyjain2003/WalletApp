@@ -1,4 +1,4 @@
-﻿using AdminService.DTOs;
+using AdminService.DTOs;
 using AdminService.Models;
 using AdminService.Repositories;
 using System.Net.Http.Json;
@@ -21,7 +21,8 @@ public class AdminService : IAdminService
 {
     private readonly IAdminRepository _repo;
     private readonly IRabbitMqPublisher _mq;
-    private readonly HttpClient _http;
+    private readonly IHttpClientFactory _httpFactory;
+    private readonly IConfiguration _config;
 
     public AdminService(IAdminRepository repo,
                         IConfiguration config,
@@ -30,24 +31,31 @@ public class AdminService : IAdminService
     {
         _repo = repo;
         _mq = mq;
+        _httpFactory = httpFactory;
+        _config = config;
+    }
 
+    private HttpClient CreateAuthClient()
+    {
         var handler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback =
                 HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
         };
-        _http = new HttpClient(handler)
+        var http = new HttpClient(handler)
         {
-            BaseAddress = new Uri(config["AuthService:BaseUrl"]!)
+            BaseAddress = new Uri(_config["AuthService:BaseUrl"]!)
         };
-        _http.DefaultRequestHeaders.Add(
+        http.DefaultRequestHeaders.Add(
             "X-Internal-Api-Key",
-            config["InternalApiKey"] ?? "WalletAppInternalKey");
+            _config["InternalApiKey"] ?? "TrunqoInternalKey");
+        return http;
     }
 
     public async Task<ApiResponse<AdminLoginResponse>> LoginAsync(AdminLoginRequest req)
     {
-        var response = await _http.GetAsync($"/api/auth/internal/user-by-email?email={req.Email}");
+        using var http = CreateAuthClient();
+        var response = await http.GetAsync($"/api/auth/internal/user-by-email?email={req.Email}");
         if (!response.IsSuccessStatusCode)
             return new ApiResponse<AdminLoginResponse>(false, "Invalid credentials.", null);
 
@@ -60,7 +68,7 @@ public class AdminService : IAdminService
         if (data?.Data == null || data.Data.Role != "Admin")
             return new ApiResponse<AdminLoginResponse>(false, "Not an admin account.", null);
 
-        var loginResponse = await _http.PostAsJsonAsync("/api/auth/login", new
+        var loginResponse = await http.PostAsJsonAsync("/api/auth/login", new
         {
             Email = req.Email,
             Password = req.Password
@@ -90,6 +98,7 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<List<KycReviewResponse>>> GetPendingKycAsync()
     {
+        await SyncKycFromAuthAsync();
         var reviews = await _repo.GetPendingKycReviewsAsync();
         return new ApiResponse<List<KycReviewResponse>>(true, "OK", reviews.Select(MapKycReview).ToList());
     }
@@ -112,7 +121,8 @@ public class AdminService : IAdminService
         review.ReviewedAt = DateTime.UtcNow;
         await _repo.SaveChangesAsync();
 
-        var authUpdateResponse = await _http.PostAsJsonAsync(
+        using var http = CreateAuthClient();
+        var authUpdateResponse = await http.PostAsJsonAsync(
             $"/api/auth/internal/user/{review.UserId}/kyc-decision",
             new { Decision = req.Decision, AdminNote = req.AdminNote });
 
@@ -170,7 +180,8 @@ public class AdminService : IAdminService
 
     public async Task<ApiResponse<object>> SubmitTicketAsync(Guid userId, SubmitTicketRequest req)
     {
-        var response = await _http.GetAsync($"/api/auth/internal/user/{userId}");
+        using var http = CreateAuthClient();
+        var response = await http.GetAsync($"/api/auth/internal/user/{userId}");
         var userEmail = "unknown@email.com";
         if (response.IsSuccessStatusCode)
         {
@@ -213,6 +224,66 @@ public class AdminService : IAdminService
     private static SupportTicketResponse MapTicket(SupportTicket ticket) =>
         new(ticket.Id, ticket.UserId, ticket.UserEmail, ticket.Subject, ticket.Message,
             ticket.Status, ticket.AdminReply, ticket.CreatedAt, ticket.RespondedAt);
+
+    private async Task SyncKycFromAuthAsync()
+    {
+        try
+        {
+            using var http = CreateAuthClient();
+            var response = await http.GetAsync("/api/auth/internal/users");
+            if (!response.IsSuccessStatusCode)
+                return;
+
+            var json = await response.Content.ReadAsStringAsync();
+            var users = JsonSerializer.Deserialize<AuthUsersResponse>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (users?.Data == null || users.Data.Count == 0)
+                return;
+
+            foreach (var user in users.Data)
+            {
+                if (user.Kyc == null)
+                    continue;
+
+                var existing = await _repo.GetKycReviewByUserIdAsync(user.UserId);
+                if (existing == null)
+                {
+                    await _repo.AddKycReviewAsync(new KycReview
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.UserId,
+                        UserFullName = user.FullName,
+                        UserEmail = user.Email,
+                        DocumentType = user.Kyc.DocumentType,
+                        DocumentNumber = user.Kyc.DocumentNumber,
+                        Status = user.Kyc.Status,
+                        AdminNote = user.Kyc.AdminNote,
+                        SubmittedAt = user.Kyc.SubmittedAt,
+                        ReviewedAt = user.Kyc.ReviewedAt
+                    });
+                    continue;
+                }
+
+                existing.UserFullName = user.FullName;
+                existing.UserEmail = user.Email;
+                existing.DocumentType = user.Kyc.DocumentType;
+                existing.DocumentNumber = user.Kyc.DocumentNumber;
+                existing.Status = user.Kyc.Status;
+                existing.AdminNote = user.Kyc.AdminNote;
+                existing.SubmittedAt = user.Kyc.SubmittedAt;
+                existing.ReviewedAt = user.Kyc.ReviewedAt;
+            }
+
+            await _repo.SaveChangesAsync();
+        }
+        catch
+        {
+            // Non-blocking sync fallback; core API should still respond.
+        }
+    }
 }
 
 public record AuthUserResponse(bool Success, string Message, AuthUserData? Data);
@@ -221,3 +292,20 @@ public record AuthUserData(Guid UserId, string FullName, string Email,
 public record AuthLoginResponse(bool Success, string Message, AuthTokenData? Data);
 public record AuthTokenData(string Token, string UserId, string FullName,
                             string Email, string Role, string Status);
+public record AuthUsersResponse(bool Success, string Message, List<AuthUserProfileData>? Data);
+public record AuthUserProfileData(
+    Guid UserId,
+    string FullName,
+    string Email,
+    string PhoneNumber,
+    string Status,
+    string Role,
+    AuthKycData? Kyc);
+public record AuthKycData(
+    Guid Id,
+    string DocumentType,
+    string DocumentNumber,
+    string Status,
+    string? AdminNote,
+    DateTime SubmittedAt,
+    DateTime? ReviewedAt);

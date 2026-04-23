@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using RewardService.Consumers;
 using RewardService.Data;
+using RewardService.Middleware;
 using RewardService.Repositories;
 using RewardService.Services;
 using System.Text;
@@ -18,10 +19,13 @@ builder.Services.AddDbContext<RewardDbContext>(options =>
 // ── 2. Register Services ───────────────────────────────────────────────────
 builder.Services.AddScoped<IRewardService, RewardService.Services.RewardService>();
 builder.Services.AddScoped<IRewardRepository, RewardRepository>();
+builder.Services.AddScoped<ICampaignRepository, CampaignRepository>();
+builder.Services.AddScoped<ICampaignService, CampaignService>();
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 // ── 3. RabbitMQ Consumer ───────────────────────────────────────────────────
 builder.Services.AddHostedService<TransferEventConsumer>();
+builder.Services.AddHostedService<CampaignTransactionConsumer>();
 
 // ── 4. JWT Authentication ──────────────────────────────────────────────────
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -75,6 +79,7 @@ var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

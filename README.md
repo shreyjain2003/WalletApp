@@ -1,13 +1,13 @@
-# WalletApp
+# Trunqo
 
 Full-stack digital wallet platform built with a microservices backend in .NET 8 and an Angular frontend.
 
 ## Repository Layout
 
 ```text
-WalletApp/
+Trunqo/
 |-- frontend/
-|   `-- wallet-app/
+|   `-- trunqo-app/
 |       `-- Angular application
 |-- backend/
 |   |-- AuthService/
@@ -16,7 +16,7 @@ WalletApp/
 |   |-- RewardService/
 |   |-- NotificationService/
 |   `-- Gateway/
-|-- WalletApp.slnx
+|-- Trunqo.slnx
 `-- ARCHITECTURE.md
 ```
 
@@ -57,12 +57,12 @@ Service -> RabbitMQ -> Consumer -> Service/Repository -> Database
 
 ### Backend
 
-Open `WalletApp.slnx` in Visual Studio or run the projects under `backend/`.
+Open `Trunqo.slnx` in Visual Studio or run the projects under `backend/`.
 
 ### Frontend
 
 ```bash
-cd frontend/wallet-app
+cd frontend/trunqo-app
 npm install
 ng serve
 ```
@@ -72,6 +72,6 @@ The Angular app runs on `http://localhost:4200` and talks to the gateway on `htt
 ## Default Admin Credentials
 
 ```text
-Email: admin@walletapp.com
+Email: admin@trunqo.com
 Password: Admin@123
 ```

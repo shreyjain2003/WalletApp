@@ -1,0 +1,89 @@
+<div class="spinner-overlay" *ngIf="loading">
+  <div class="spinner"></div>
+</div>
+
+<div class="auth-container fade-in">
+  <div class="auth-card register-card">
+    <div class="auth-card-header">
+      <div class="auth-logo">Trunqo</div>
+      <h1 class="auth-title">Create Your Account</h1>
+      <p class="auth-subtitle">Get started with secure digital payments</p>
+    </div>
+
+    <div class="field-row">
+      <div class="field-group">
+        <label class="wa-label">Full Name</label>
+        <div class="wa-input-wrap" [class.focused]="nf">
+          <mat-icon>person_outline</mat-icon>
+          <input
+            [(ngModel)]="fullName"
+            placeholder="John Doe"
+            (focus)="nf = true"
+            (blur)="nf = false"
+            autocomplete="name"/>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="wa-label">Phone Number</label>
+        <div class="wa-input-wrap" [class.focused]="phf">
+          <mat-icon>phone_iphone</mat-icon>
+          <input
+            [(ngModel)]="phone"
+            placeholder="9876543210"
+            maxlength="10"
+            (focus)="phf = true"
+            (blur)="phf = false"
+            autocomplete="tel"/>
+        </div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="wa-label">Email Address</label>
+      <div class="wa-input-wrap" [class.focused]="ef">
+        <mat-icon>mail_outline</mat-icon>
+        <input
+          type="email"
+          [(ngModel)]="email"
+          placeholder="you@example.com"
+          (focus)="ef = true"
+          (blur)="ef = false"
+          autocomplete="email"/>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="wa-label">Password</label>
+      <div class="wa-input-wrap" [class.focused]="pf">
+        <mat-icon>lock_outline</mat-icon>
+        <input
+          [type]="showPass ? 'text' : 'password'"
+          [(ngModel)]="password"
+          placeholder="Min 8 chars, upper/lower/number/symbol"
+          (focus)="pf = true"
+          (blur)="pf = false"
+          autocomplete="new-password"/>
+        <mat-icon class="toggle-pass" (click)="showPass = !showPass">
+          {{ showPass ? 'visibility_off' : 'visibility' }}
+        </mat-icon>
+      </div>
+    </div>
+
+    <button class="wa-btn-primary" (click)="register()" [disabled]="loading">
+      <span>{{ loading ? 'Creating account...' : 'Create Account' }}</span>
+      <mat-icon *ngIf="!loading">arrow_forward</mat-icon>
+    </button>
+
+    <div class="divider">
+      <div class="divider-line"></div>
+      <span>Already have an account?</span>
+      <div class="divider-line"></div>
+    </div>
+
+    <button class="wa-btn-outline" routerLink="/login">
+      <mat-icon>login</mat-icon>
+      <span>Sign In</span>
+    </button>
+  </div>
+</div>

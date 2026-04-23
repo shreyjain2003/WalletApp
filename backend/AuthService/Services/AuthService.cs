@@ -1,6 +1,7 @@
-﻿using AuthService.DTOs;
+using AuthService.DTOs;
 using AuthService.Models;
 using AuthService.Repositories;
+using System.Security.Cryptography;
 
 namespace AuthService.Services;
 
@@ -8,56 +9,45 @@ public interface IAuthService
 {
     Task<ApiResponse<AuthResponse>> RegisterAsync(RegisterRequest req);
     Task<ApiResponse<AuthResponse>> LoginAsync(LoginRequest req);
-    Task<ApiResponse<object>> SubmitKycAsync(Guid userId, KycSubmitRequest req);
-    Task<ApiResponse<object>> ApplyKycDecisionAsync(Guid userId, string decision, string? adminNote);
-    Task<ApiResponse<UserProfileResponse>> UpdateUserAsync(Guid userId, UpdateUserRequest req);
-    Task<ApiResponse<UserProfileResponse>> GetProfileAsync(Guid userId);
-    Task<ApiResponse<UserProfileResponse>> GetUserByEmailAsync(string email);
-    Task<ApiResponse<List<UserProfileResponse>>> GetAllUsersAsync();
-    Task<ApiResponse<object>> DeleteUserAsync(Guid userId);
-    Task<ApiResponse<AuthResponse>> RefreshTokenAsync(Guid userId);
-    Task<ApiResponse<PinStatusResponse>> GetPinStatusAsync(Guid userId);
-    Task<ApiResponse<object>> SetPinAsync(Guid userId, SetPinRequest req);
-    Task<ApiResponse<object>> RemovePinAsync(Guid userId, RemovePinRequest req);
-    Task<ApiResponse<object>> VerifyPinAsync(Guid userId, string pin);
+
+    Task RequestPasswordResetAsync(string email);
+    Task<VerifyPasswordResetOtpResponse?> VerifyOtpAsync(string email, string otp);
+    Task<bool> ResetPasswordAsync(ResetPasswordRequest request);
 }
 
 public class AuthService : IAuthService
 {
     private readonly IAuthRepository _repo;
-    private readonly ITransactionPinRepository _pinRepo;
     private readonly ITokenService _tokenService;
     private readonly IRabbitMqPublisher _mq;
 
     public AuthService(IAuthRepository repo,
-                       ITransactionPinRepository pinRepo,
                        ITokenService tokenService,
                        IRabbitMqPublisher mq)
     {
         _repo = repo;
-        _pinRepo = pinRepo;
         _tokenService = tokenService;
         _mq = mq;
     }
 
     public async Task<ApiResponse<AuthResponse>> RegisterAsync(RegisterRequest req)
     {
-        var normalizedEmail = req.Email.ToLower().Trim();
-        var normalizedPhone = req.PhoneNumber.Trim();
-        var normalizedName = req.FullName.Trim();
+        var email = req.Email.ToLower().Trim();
+        var fullName = req.FullName.Trim();
+        var phone = req.PhoneNumber.Trim();
 
-        if (await _repo.EmailExistsAsync(normalizedEmail))
-            return new ApiResponse<AuthResponse>(false, "Email already registered.", null);
+        if (await _repo.EmailExistsAsync(email))
+            return new ApiResponse<AuthResponse>(false, "Email already exists", null);
 
-        if (await _repo.PhoneExistsAsync(normalizedPhone))
-            return new ApiResponse<AuthResponse>(false, "Phone number already registered.", null);
+        if (await _repo.PhoneExistsAsync(phone))
+            return new ApiResponse<AuthResponse>(false, "Phone number already registered", null);
 
         var user = new User
         {
             Id = Guid.NewGuid(),
-            FullName = normalizedName,
-            Email = normalizedEmail,
-            PhoneNumber = normalizedPhone,
+            FullName = fullName,
+            Email = email,
+            PhoneNumber = phone,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Role = "User",
             Status = "Pending",
@@ -67,268 +57,136 @@ public class AuthService : IAuthService
         await _repo.AddUserAsync(user);
         await _repo.SaveChangesAsync();
 
-        var token = _tokenService.GenerateToken(user);
-
-        _mq.Publish("notifications", new
-        {
-            UserId = user.Id.ToString(),
-            Title = "Welcome to WalletApp!",
-            Message = $"Hi {user.FullName}, your account was created. Please submit KYC to activate your wallet.",
-            Type = "welcome"
+        await _mq.PublishAsync("notifications", new { 
+            userId = user.Id.ToString(), 
+            fullName = user.FullName, 
+            email = user.Email, 
+            type = "welcome" 
         });
 
-        return new ApiResponse<AuthResponse>(
-            true, "Registration successful.",
-            new AuthResponse(token, user.Id.ToString(), user.FullName,
-                             user.Email, user.Role, user.Status));
+        var token = _tokenService.GenerateToken(user);
+
+        return new ApiResponse<AuthResponse>(true, "Success",
+            new AuthResponse(token, user.Id.ToString(), user.FullName, user.Email, user.Role, user.Status));
     }
 
     public async Task<ApiResponse<AuthResponse>> LoginAsync(LoginRequest req)
     {
-        var user = await _repo.GetUserByEmailAsync(req.Email.ToLower().Trim());
+        var user = await _repo.GetUserByEmailAsync(req.Email.ToLower());
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
-            return new ApiResponse<AuthResponse>(false, "Invalid email or password.", null);
+            return new ApiResponse<AuthResponse>(false, "Invalid credentials", null);
 
         var token = _tokenService.GenerateToken(user);
 
-        return new ApiResponse<AuthResponse>(
-            true, "Login successful.",
-            new AuthResponse(token, user.Id.ToString(), user.FullName,
-                             user.Email, user.Role, user.Status));
+        return new ApiResponse<AuthResponse>(true, "Success",
+            new AuthResponse(token, user.Id.ToString(), user.FullName, user.Email, user.Role, user.Status));
     }
 
-    public async Task<ApiResponse<object>> SubmitKycAsync(Guid userId, KycSubmitRequest req)
+    // 🔥 FORGOT PASSWORD FLOW
+
+    public async Task RequestPasswordResetAsync(string email)
     {
-        var user = await _repo.GetUserByIdAsync(userId, includeKyc: true);
+        var user = await _repo.GetUserByEmailAsync(email.ToLower().Trim());
+        if (user == null) return;
 
-        if (user == null)
-            return new ApiResponse<object>(false, "User not found.", null);
-
-        var existingKyc = user.KycDocument;
-
-        if (existingKyc?.Status == "Approved")
-            return new ApiResponse<object>(false, "KYC already approved.", null);
-
-        if (existingKyc?.Status == "Pending")
-            return new ApiResponse<object>(false, "KYC already submitted and under review.", null);
-
-        if (existingKyc != null)
-            _repo.RemoveKycDocument(existingKyc);
-
-        var kyc = new KycDocument
+        var otp = GenerateOtp();
+        var session = new PasswordResetSession
         {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            DocumentType = req.DocumentType,
-            DocumentNumber = req.DocumentNumber,
-            Status = "Pending",
-            SubmittedAt = DateTime.UtcNow
+            UserId = user.Id,
+            Purpose = "PASSWORD_RESET",
+            OtpHash = Hash(otp),
+            OtpExpiresAtUtc = DateTime.UtcNow.AddMinutes(10),
+            MaxAttempts = 5,
+            Attempts = 0
         };
 
-        await _repo.AddKycDocumentAsync(kyc);
+        await _repo.AddPasswordResetSessionAsync(session);
         await _repo.SaveChangesAsync();
 
-        _mq.Publish("kyc_submissions", new
+        await _mq.PublishAsync("notifications", new
         {
-            UserId = userId.ToString(),
-            FullName = user.FullName,
-            Email = user.Email,
-            DocumentType = req.DocumentType,
-            DocumentNumber = req.DocumentNumber,
-            SubmittedAt = kyc.SubmittedAt
+            userId = user.Id.ToString(),
+            email = user.Email,
+            otp = otp           
         });
-
-        return new ApiResponse<object>(true, "KYC submitted. Awaiting admin review.", null);
     }
 
-    public async Task<ApiResponse<object>> ApplyKycDecisionAsync(Guid userId, string decision, string? adminNote)
+    public async Task<VerifyPasswordResetOtpResponse?> VerifyOtpAsync(string email, string otp)
     {
-        if (decision != "Approved" && decision != "Rejected")
-            return new ApiResponse<object>(false, "Decision must be Approved or Rejected.", null);
+        var user = await _repo.GetUserByEmailAsync(email.ToLower().Trim());
+        if (user == null) return null;
 
-        var user = await _repo.GetUserByIdAsync(userId, includeKyc: true);
+        var session = await _repo.GetLatestPasswordResetSessionAsync(user.Id, "PASSWORD_RESET");
 
-        if (user == null)
-            return new ApiResponse<object>(false, "User not found.", null);
+        if (session == null || session.OtpExpiresAtUtc < DateTime.UtcNow)
+            return null;
 
-        if (user.KycDocument == null)
-            return new ApiResponse<object>(false, "KYC record not found.", null);
+        if (session.Attempts >= session.MaxAttempts)
+            return null;
 
-        user.Status = decision == "Approved" ? "Active" : "Rejected";
-        user.KycDocument.Status = decision;
-        user.KycDocument.AdminNote = adminNote;
-        user.KycDocument.ReviewedAt = DateTime.UtcNow;
-
-        await _repo.SaveChangesAsync();
-
-        return new ApiResponse<object>(true, $"KYC {decision} applied.", null);
-    }
-
-    public async Task<ApiResponse<UserProfileResponse>> UpdateUserAsync(Guid userId, UpdateUserRequest req)
-    {
-        var user = await _repo.GetUserByIdAsync(userId, includeKyc: true);
-
-        if (user == null)
-            return new ApiResponse<UserProfileResponse>(false, "User not found.", null);
-
-        var normalizedEmail = req.Email.ToLower().Trim();
-        var normalizedPhone = req.PhoneNumber.Trim();
-        var normalizedName = req.FullName.Trim();
-
-        if (await _repo.EmailExistsAsync(normalizedEmail, userId))
-            return new ApiResponse<UserProfileResponse>(false, "Email already registered.", null);
-
-        if (await _repo.PhoneExistsAsync(normalizedPhone, userId))
-            return new ApiResponse<UserProfileResponse>(false, "Phone number already registered.", null);
-
-        user.FullName = normalizedName;
-        user.Email = normalizedEmail;
-        user.PhoneNumber = normalizedPhone;
-
-        await _repo.SaveChangesAsync();
-
-        return new ApiResponse<UserProfileResponse>(true, "User updated successfully.", MapProfile(user));
-    }
-
-    public async Task<ApiResponse<UserProfileResponse>> GetProfileAsync(Guid userId)
-    {
-        var user = await _repo.GetUserByIdAsync(userId, includeKyc: true);
-
-        if (user == null)
-            return new ApiResponse<UserProfileResponse>(false, "User not found.", null);
-
-        return new ApiResponse<UserProfileResponse>(true, "OK", MapProfile(user));
-    }
-
-    public async Task<ApiResponse<UserProfileResponse>> GetUserByEmailAsync(string email)
-    {
-        var user = await _repo.GetUserByEmailAsync(email.ToLower().Trim(), includeKyc: true);
-
-        if (user == null)
-            return new ApiResponse<UserProfileResponse>(false, "User not found.", null);
-
-        return new ApiResponse<UserProfileResponse>(true, "OK", MapProfile(user));
-    }
-
-    public async Task<ApiResponse<List<UserProfileResponse>>> GetAllUsersAsync()
-    {
-        var users = await _repo.GetUsersByRoleAsync("User", includeKyc: true);
-        return new ApiResponse<List<UserProfileResponse>>(
-            true,
-            "OK",
-            users.Select(MapProfile).ToList());
-    }
-
-    public async Task<ApiResponse<object>> DeleteUserAsync(Guid userId)
-    {
-        var user = await _repo.GetUserByIdAsync(userId, includeKyc: true);
-
-        if (user == null)
-            return new ApiResponse<object>(false, "User not found.", null);
-
-        if (user.KycDocument != null)
-            _repo.RemoveKycDocument(user.KycDocument);
-
-        _repo.RemoveUser(user);
-        await _repo.SaveChangesAsync();
-
-        return new ApiResponse<object>(true, "User deleted successfully.", null);
-    }
-
-    public async Task<ApiResponse<AuthResponse>> RefreshTokenAsync(Guid userId)
-    {
-        var user = await _repo.GetUserByIdAsync(userId);
-
-        if (user == null)
-            return new ApiResponse<AuthResponse>(false, "User not found.", null);
-
-        var token = _tokenService.GenerateToken(user);
-
-        return new ApiResponse<AuthResponse>(
-            true, "Token refreshed.",
-            new AuthResponse(token, user.Id.ToString(), user.FullName,
-                             user.Email, user.Role, user.Status));
-    }
-
-    public async Task<ApiResponse<PinStatusResponse>> GetPinStatusAsync(Guid userId)
-    {
-        var hasPin = await _pinRepo.HasPinAsync(userId);
-        return new ApiResponse<PinStatusResponse>(true, "OK", new PinStatusResponse(hasPin));
-    }
-
-    public async Task<ApiResponse<object>> SetPinAsync(Guid userId, SetPinRequest req)
-    {
-        if (!IsValidPin(req.NewPin) || !IsValidPin(req.ConfirmPin))
-            return new ApiResponse<object>(false, "PIN must be exactly 4 digits.", null);
-
-        if (req.NewPin != req.ConfirmPin)
-            return new ApiResponse<object>(false, "PIN confirmation does not match.", null);
-
-        var hasExistingPin = await _pinRepo.HasPinAsync(userId);
-        if (hasExistingPin)
+        // Verify OTP first, then increment attempts only on failure
+        if (!VerifyHash(otp, session.OtpHash))
         {
-            if (!IsValidPin(req.CurrentPin))
-                return new ApiResponse<object>(false, "Current PIN is required.", null);
-
-            var isCurrentPinValid = await _pinRepo.VerifyPinAsync(userId, req.CurrentPin!);
-            if (!isCurrentPinValid)
-                return new ApiResponse<object>(false, "Current PIN is incorrect.", null);
+            session.Attempts++;
+            session.LastAttemptAtUtc = DateTime.UtcNow;
+            await _repo.SaveChangesAsync();
+            return null;
         }
 
-        await _pinRepo.SetPinAsync(userId, req.NewPin);
-        return new ApiResponse<object>(true,
-            hasExistingPin ? "Transaction PIN updated successfully." : "Transaction PIN set successfully.",
-            null);
+        var resetToken = Guid.NewGuid().ToString();
+
+        session.ResetTokenHash = Hash(resetToken);
+        session.ResetTokenExpiresAtUtc = DateTime.UtcNow.AddMinutes(10);
+        session.VerifiedAtUtc = DateTime.UtcNow;
+
+        await _repo.SaveChangesAsync();
+
+        return new VerifyPasswordResetOtpResponse(resetToken, session.ResetTokenExpiresAtUtc.Value);
     }
 
-    public async Task<ApiResponse<object>> RemovePinAsync(Guid userId, RemovePinRequest req)
+    public async Task<bool> ResetPasswordAsync(ResetPasswordRequest request)
     {
-        var hasPin = await _pinRepo.HasPinAsync(userId);
-        if (!hasPin)
-            return new ApiResponse<object>(false, "No transaction PIN is set.", null);
+        if (request.NewPassword != request.ConfirmPassword)
+            return false;
 
-        if (!IsValidPin(req.CurrentPin))
-            return new ApiResponse<object>(false, "Current PIN is required.", null);
+        var user = await _repo.GetUserByEmailAsync(request.Email.ToLower().Trim());
+        if (user == null) return false;
 
-        var isCurrentPinValid = await _pinRepo.VerifyPinAsync(userId, req.CurrentPin);
-        if (!isCurrentPinValid)
-            return new ApiResponse<object>(false, "Current PIN is incorrect.", null);
+        var session = await _repo.GetLatestVerifiedPasswordResetSessionAsync(user.Id, "PASSWORD_RESET");
 
-        await _pinRepo.RemovePinAsync(userId);
-        return new ApiResponse<object>(true, "Transaction PIN removed successfully.", null);
+        if (session == null || session.ResetTokenExpiresAtUtc < DateTime.UtcNow)
+            return false;
+
+        if (session.ResetTokenHash == null ||
+            !VerifyHash(request.ResetToken, session.ResetTokenHash))
+            return false;
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        session.UsedAtUtc = DateTime.UtcNow;
+
+        await _repo.SaveChangesAsync();
+
+        return true;
     }
 
-    public async Task<ApiResponse<object>> VerifyPinAsync(Guid userId, string pin)
+    // 🔧 HELPERS
+
+    private static string GenerateOtp()
     {
-        var hasPin = await _pinRepo.HasPinAsync(userId);
-        if (!hasPin)
-            return new ApiResponse<object>(false, "Transaction PIN is not set.", null);
-
-        if (!IsValidPin(pin))
-            return new ApiResponse<object>(false, "Transaction PIN is required.", null);
-
-        var isValid = await _pinRepo.VerifyPinAsync(userId, pin);
-        if (!isValid)
-            return new ApiResponse<object>(false, "Invalid transaction PIN.", null);
-
-        return new ApiResponse<object>(true, "PIN verified.", null);
+        // Use cryptographically secure random number generator
+        var bytes = new byte[4];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+        var value = Math.Abs(BitConverter.ToInt32(bytes, 0)) % 900000 + 100000;
+        return value.ToString();
     }
 
-    private static UserProfileResponse MapProfile(User user)
+    private string Hash(string input)
     {
-        var kyc = user.KycDocument;
-        KycResponse? kycResp = kyc == null ? null : new KycResponse(
-            kyc.Id, kyc.DocumentType, kyc.DocumentNumber,
-            kyc.Status, kyc.AdminNote, kyc.SubmittedAt, kyc.ReviewedAt);
-
-        return new UserProfileResponse(
-            user.Id, user.FullName, user.Email,
-            user.PhoneNumber, user.Status, user.Role, kycResp);
+        using var sha = SHA256.Create();
+        return Convert.ToBase64String(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input)));
     }
 
-    private static bool IsValidPin(string? pin) =>
-        !string.IsNullOrWhiteSpace(pin)
-        && pin.Length == 4
-        && pin.All(char.IsDigit);
+    private bool VerifyHash(string input, string hash) =>
+        Hash(input) == hash;
 }

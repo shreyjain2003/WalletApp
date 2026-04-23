@@ -1,4 +1,6 @@
-using System.Text.Json;
+using AuthService.Data;
+using AuthService.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace AuthService.Repositories;
 
@@ -12,92 +14,53 @@ public interface ITransactionPinRepository
 
 public class TransactionPinRepository : ITransactionPinRepository
 {
-    private readonly string _filePath;
-    private readonly SemaphoreSlim _mutex = new(1, 1);
+    private readonly AuthDbContext _db;
 
-    public TransactionPinRepository(IWebHostEnvironment env)
+    public TransactionPinRepository(AuthDbContext db)
     {
-        var directory = Path.Combine(env.ContentRootPath, "App_Data");
-        Directory.CreateDirectory(directory);
-        _filePath = Path.Combine(directory, "transaction-pins.json");
+        _db = db;
     }
 
-    public async Task<bool> HasPinAsync(Guid userId)
-    {
-        var pins = await ReadPinsAsync();
-        return pins.ContainsKey(userId.ToString());
-    }
+    public Task<bool> HasPinAsync(Guid userId) =>
+        _db.TransactionPins.AnyAsync(p => p.UserId == userId);
 
     public async Task<bool> VerifyPinAsync(Guid userId, string pin)
     {
-        var pins = await ReadPinsAsync();
-        return pins.TryGetValue(userId.ToString(), out var hash)
-               && BCrypt.Net.BCrypt.Verify(pin, hash);
+        var record = await _db.TransactionPins.FindAsync(userId);
+        return record != null && BCrypt.Net.BCrypt.Verify(pin, record.PinHash);
     }
 
     public async Task SetPinAsync(Guid userId, string pin)
     {
-        await _mutex.WaitAsync();
-        try
+        var hash = BCrypt.Net.BCrypt.HashPassword(pin);
+        var existing = await _db.TransactionPins.FindAsync(userId);
+
+        if (existing != null)
         {
-            var pins = await ReadPinsUnsafeAsync();
-            pins[userId.ToString()] = BCrypt.Net.BCrypt.HashPassword(pin);
-            await WritePinsUnsafeAsync(pins);
+            existing.PinHash = hash;
+            existing.UpdatedAt = DateTime.UtcNow;
         }
-        finally
+        else
         {
-            _mutex.Release();
+            _db.TransactionPins.Add(new TransactionPin
+            {
+                UserId = userId,
+                PinHash = hash,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
         }
+
+        await _db.SaveChangesAsync();
     }
 
     public async Task RemovePinAsync(Guid userId)
     {
-        await _mutex.WaitAsync();
-        try
+        var existing = await _db.TransactionPins.FindAsync(userId);
+        if (existing != null)
         {
-            var pins = await ReadPinsUnsafeAsync();
-            if (pins.Remove(userId.ToString()))
-                await WritePinsUnsafeAsync(pins);
+            _db.TransactionPins.Remove(existing);
+            await _db.SaveChangesAsync();
         }
-        finally
-        {
-            _mutex.Release();
-        }
-    }
-
-    private async Task<Dictionary<string, string>> ReadPinsAsync()
-    {
-        await _mutex.WaitAsync();
-        try
-        {
-            return await ReadPinsUnsafeAsync();
-        }
-        finally
-        {
-            _mutex.Release();
-        }
-    }
-
-    private async Task<Dictionary<string, string>> ReadPinsUnsafeAsync()
-    {
-        if (!File.Exists(_filePath))
-            return new Dictionary<string, string>();
-
-        var json = await File.ReadAllTextAsync(_filePath);
-        if (string.IsNullOrWhiteSpace(json))
-            return new Dictionary<string, string>();
-
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(json)
-               ?? new Dictionary<string, string>();
-    }
-
-    private Task WritePinsUnsafeAsync(Dictionary<string, string> pins)
-    {
-        var json = JsonSerializer.Serialize(pins, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
-
-        return File.WriteAllTextAsync(_filePath, json);
     }
 }

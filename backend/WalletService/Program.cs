@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using WalletService.Data;
+using WalletService.Middleware;
 using WalletService.Repositories;
 using WalletService.Services;
 
@@ -15,6 +16,7 @@ builder.Services.AddDbContext<WalletDbContext>(options =>
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // ── 2. Register Services ───────────────────────────────────────────────────
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IWalletService, WalletService.Services.WalletService>();
 builder.Services.AddScoped<IWalletRepository, WalletRepository>();
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
@@ -75,6 +77,7 @@ var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

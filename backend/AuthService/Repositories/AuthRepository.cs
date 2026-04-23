@@ -13,6 +13,10 @@ public interface IAuthRepository
     Task<List<User>> GetUsersByRoleAsync(string role, bool includeKyc = false);
     Task AddUserAsync(User user);
     Task AddKycDocumentAsync(KycDocument document);
+    Task AddPasswordResetSessionAsync(PasswordResetSession session);
+    Task<PasswordResetSession?> GetLatestPasswordResetSessionAsync(Guid userId, string purpose);
+    Task<PasswordResetSession?> GetLatestVerifiedPasswordResetSessionAsync(Guid userId, string purpose);
+    Task InvalidatePasswordResetSessionsAsync(Guid userId, string purpose, Guid? excludeSessionId = null);
     void RemoveKycDocument(KycDocument document);
     void RemoveUser(User user);
     Task<int> SaveChangesAsync();
@@ -78,6 +82,46 @@ public class AuthRepository : IAuthRepository
     public Task AddUserAsync(User user) => _db.Users.AddAsync(user).AsTask();
 
     public Task AddKycDocumentAsync(KycDocument document) => _db.KycDocuments.AddAsync(document).AsTask();
+
+    public Task AddPasswordResetSessionAsync(PasswordResetSession session) =>
+        _db.PasswordResetSessions.AddAsync(session).AsTask();
+
+    public Task<PasswordResetSession?> GetLatestPasswordResetSessionAsync(Guid userId, string purpose) =>
+        _db.PasswordResetSessions
+            .Where(s => s.UserId == userId && s.Purpose == purpose)
+            .OrderByDescending(s => s.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+
+    public Task<PasswordResetSession?> GetLatestVerifiedPasswordResetSessionAsync(Guid userId, string purpose) =>
+        _db.PasswordResetSessions
+            .Where(s => s.UserId == userId
+                && s.Purpose == purpose
+                && s.VerifiedAtUtc != null
+                && s.UsedAtUtc == null
+                && s.ResetTokenHash != null
+                && s.ResetTokenExpiresAtUtc != null)
+            .OrderByDescending(s => s.VerifiedAtUtc)
+            .FirstOrDefaultAsync();
+
+    public async Task InvalidatePasswordResetSessionsAsync(
+        Guid userId,
+        string purpose,
+        Guid? excludeSessionId = null)
+    {
+        var sessions = await _db.PasswordResetSessions
+            .Where(s => s.UserId == userId
+                && s.Purpose == purpose
+                && s.UsedAtUtc == null
+                && (!excludeSessionId.HasValue || s.Id != excludeSessionId.Value))
+            .ToListAsync();
+
+        if (sessions.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+        foreach (var session in sessions)
+            session.UsedAtUtc = now;
+    }
 
     public void RemoveKycDocument(KycDocument document) => _db.KycDocuments.Remove(document);
 

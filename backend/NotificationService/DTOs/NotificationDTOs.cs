@@ -21,3 +21,19 @@ public record MoneyRequestNotificationRequest(
     decimal Amount,
     string? Note
 );
+
+public record InternalNotificationRequest(
+    string UserId,
+    string? Email,
+    string Title,
+    string Message,
+    string Type,
+    decimal? Amount = null,
+    string? Reference = null,
+    string? Note = null,
+    string? CounterpartyName = null,
+    string? CounterpartyEmail = null,
+    decimal? BalanceAfter = null,
+    DateTime? OccurredAtUtc = null,
+    string? Otp = null
+);

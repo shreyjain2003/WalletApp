@@ -13,6 +13,7 @@ public interface IWalletRepository
     Task AddTransactionAsync(WalletTransaction transaction);
     Task AddTransactionsAsync(params WalletTransaction[] transactions);
     Task<int> SaveChangesAsync();
+    Task ExecuteInTransactionAsync(Func<Task> action);
 }
 
 public class WalletRepository : IWalletRepository
@@ -46,4 +47,19 @@ public class WalletRepository : IWalletRepository
         _db.WalletTransactions.AddRangeAsync(transactions);
 
     public Task<int> SaveChangesAsync() => _db.SaveChangesAsync();
+
+    public async Task ExecuteInTransactionAsync(Func<Task> action)
+    {
+        using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            await action();
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
 }

@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
-using RewardService.DTOs;
+using RewardService.Common.Exceptions;
 using RewardService.Services;
+using System.Security.Claims;
 
 namespace RewardService.Controllers;
 
@@ -12,17 +12,19 @@ namespace RewardService.Controllers;
 public class RewardController : ControllerBase
 {
     private readonly IRewardService _reward;
+    private readonly IConfiguration _config;
 
-    public RewardController(IRewardService reward)
+    public RewardController(IRewardService reward, IConfiguration config)
     {
         _reward = reward;
+        _config = config;
     }
 
     private Guid CurrentUserId =>
-        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+            ? id
+            : throw new UnauthorizedAppException("Invalid or expired token.");
 
-    // ── GET /api/rewards ──────────────────────────────────────────────────
-    // Get current user's reward account — creates one if doesn't exist
     [HttpGet]
     public async Task<IActionResult> GetRewards()
     {
@@ -30,7 +32,6 @@ public class RewardController : ControllerBase
         return Ok(result);
     }
 
-    // ── GET /api/rewards/history ──────────────────────────────────────────
     [HttpGet("history")]
     public async Task<IActionResult> GetHistory()
     {
@@ -38,23 +39,24 @@ public class RewardController : ControllerBase
         return Ok(result);
     }
 
-    // ── POST /api/rewards/internal/add-points ─────────────────────────────
-    // Internal endpoint — called by RabbitMQ consumer when transfer happens
     [AllowAnonymous]
     [HttpPost("internal/add-points")]
     public async Task<IActionResult> AddPoints([FromBody] AddPointsRequest req)
     {
+        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey";
+        if (!Request.Headers.TryGetValue("X-Internal-Api-Key", out var key) || key != expectedKey)
+            throw new UnauthorizedAppException("Unauthorized internal request.");
+
         var result = await _reward.AddPointsAsync(
             req.UserId, req.Points, req.Reason, req.Reference);
 
         if (!result.Success)
-            return BadRequest(result);
+            throw new AppValidationException(result.Message);
 
         return Ok(result);
     }
 }
 
-// Internal request model
 public record AddPointsRequest(
     Guid UserId,
     int Points,

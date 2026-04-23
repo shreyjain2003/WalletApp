@@ -1,0 +1,116 @@
+<div class="landing-page">
+  <!-- Navbar -->
+  <nav class="public-nav">
+    <div class="container nav-container">
+      <div class="logo">
+        <img src="assets/logo.png?v=2" alt="Trunqo Logo" class="brand-logo" />
+      </div>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+      </div>
+      <div class="nav-actions">
+        <a routerLink="/login" class="nav-btn-text">Sign In</a>
+        <a routerLink="/register" class="wa-btn-primary nav-btn" style="text-decoration:none">Get Started</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="hero-section pattern-bg">
+    <div class="container hero-container">
+      <div class="hero-content fade-in">
+        <div class="badge-pill fade-in">New: Crypto Wallets now available</div>
+        <h1 class="hero-title fade-in-2">
+          The banking alternative that <span class="highlight">works for you.</span>
+        </h1>
+        <p class="hero-subtitle fade-in-3">
+          Manage your money, track your spending, and achieve your financial goals with our beautifully designed premium wallet.
+        </p>
+        <div class="hero-cta fade-in-3">
+          <button routerLink="/register" class="wa-btn-primary cta-btn">Open Free Account <mat-icon>arrow_forward</mat-icon></button>
+        </div>
+        <div class="trust-metrics fade-in-3">
+          <div class="metric">
+            <span class="metric-val">2M+</span>
+            <span class="metric-lbl">Users</span>
+          </div>
+          <div class="divider"></div>
+          <div class="metric">
+            <span class="metric-val">$5B+</span>
+            <span class="metric-lbl">Transactions</span>
+          </div>
+        </div>
+      </div>
+      <div class="hero-visual fade-in-2">
+        <!-- Mock App UI Card -->
+        <div class="mock-card">
+          <div class="mock-header">
+            <div class="mock-card-type">Trunqo Card</div>
+            <mat-icon>contactless</mat-icon>
+          </div>
+          <div class="mock-chip"></div>
+          <div class="mock-number">**** **** **** 4092</div>
+          <div class="mock-footer">
+            <div class="mock-holder">JOHN DOE</div>
+            <div class="mock-brand">VISA</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Features Section -->
+  <section id="features" class="features-section">
+    <div class="container">
+      <div class="section-header text-center fade-in">
+        <h2 class="section-title-large">Everything you need</h2>
+        <p class="section-subtitle">A complete financial toolkit built into one app.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card wa-card fade-in-2" *ngFor="let feat of features">
+          <div class="feature-icon-wrapper">
+            <mat-icon class="feature-icon">{{ feat.icon }}</mat-icon>
+          </div>
+          <h3 class="feature-title">{{ feat.title }}</h3>
+          <p class="feature-desc">{{ feat.desc }}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="public-footer">
+    <div class="container footer-container">
+      <div class="footer-brand">
+        <div class="logo">
+          <img src="assets/logo.png?v=2" alt="Trunqo Logo" class="brand-logo footer-logo" />
+        </div>
+        <p class="footer-moto">Smart banking for a modern world.</p>
+      </div>
+      <div class="footer-links">
+        <div class="link-group">
+          <h4>Product</h4>
+          <a href="#">Features</a>
+          <a href="#">Pricing</a>
+          <a href="#">Security</a>
+        </div>
+        <div class="link-group">
+          <h4>Company</h4>
+          <a href="#">About Us</a>
+          <a href="#">Careers</a>
+          <a href="#">Contact</a>
+        </div>
+        <div class="link-group">
+          <h4>Legal</h4>
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Service</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <p>&copy; 2026 Trunqo Financial. All rights reserved.</p>
+    </div>
+  </footer>
+</div>
