@@ -69,6 +69,20 @@ ng serve
 
 The Angular app runs on `http://localhost:4200` and talks to the gateway on `http://localhost:5000`.
 
+## Local Secrets
+
+`backend/*/appsettings.json` now contains placeholder values for sensitive settings.
+Set real values through environment variables (or user secrets) before running, for example:
+
+- `Jwt__Key`
+- `InternalApiKey`
+- `MongoDB__ConnectionString`
+- `Email__Username`
+- `Email__Password`
+- `Email__FromEmail`
+- `EmailSettings__SenderEmail`
+- `EmailSettings__Password`
+
 ## Default Admin Credentials
 
 ```text

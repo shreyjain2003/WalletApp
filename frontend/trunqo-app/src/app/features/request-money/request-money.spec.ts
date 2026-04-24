@@ -1,17 +1,21 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { RequestMoney } from './request-money';
+import { RequestMoneyComponent } from './request-money';
 
-describe('RequestMoney', () => {
-  let component: RequestMoney;
-  let fixture: ComponentFixture<RequestMoney>;
+describe('RequestMoneyComponent', () => {
+  let component: RequestMoneyComponent;
+  let fixture: ComponentFixture<RequestMoneyComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [RequestMoney],
+      imports: [RequestMoneyComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(RequestMoney);
+    fixture = TestBed.createComponent(RequestMoneyComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

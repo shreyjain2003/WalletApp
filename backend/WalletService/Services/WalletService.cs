@@ -299,52 +299,64 @@ public class WalletService : IWalletService
 
     public async Task<ExportFileResult?> ExportHistoryCsvAsync(Guid userId)
     {
-        var transactions = await GetHistoryRecordsAsync(userId);
-        if (transactions == null) return null;
+        var wallet = await _repo.GetWalletByUserIdAsync(userId);
+        if (wallet == null) return null;
+
+        var transactions = await _repo.GetTransactionsForWalletAsync(wallet.Id);
+        var generatedAtUtc = DateTime.UtcNow;
+        var authUser = await GetAuthUserAsync(userId);
+        var userFullName = string.IsNullOrWhiteSpace(authUser?.FullName) ? "N/A" : authUser!.FullName;
+        var totalCredits = transactions.Where(IsCredit).Sum(t => Math.Abs(t.Amount));
+        var totalDebits = transactions.Where(IsDebit).Sum(t => Math.Abs(t.Amount));
 
         var csv = new StringBuilder();
-        csv.AppendLine("Id,Type,Amount,BalanceAfter,Status,Reference,Note,CreatedAtUtc");
+        csv.AppendLine("Trunqo Wallet Statement");
+        csv.AppendLine($"Generated At (UTC),{EscapeCsv(generatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))}");
+        csv.AppendLine($"Account Holder,{EscapeCsv(userFullName)}");
+        csv.AppendLine($"Wallet Id,{EscapeCsv(wallet.Id.ToString())}");
+        csv.AppendLine($"User Id,{EscapeCsv(userId.ToString())}");
+        csv.AppendLine($"Currency,{EscapeCsv(wallet.Currency)}");
+        csv.AppendLine($"Current Balance,{EscapeCsv(FormatCurrency(wallet.Balance, wallet.Currency))}");
+        csv.AppendLine($"Total Transactions,{transactions.Count.ToString(CultureInfo.InvariantCulture)}");
+        csv.AppendLine($"Total Credits,{EscapeCsv(FormatCurrency(totalCredits, wallet.Currency))}");
+        csv.AppendLine($"Total Debits,{EscapeCsv(FormatCurrency(totalDebits, wallet.Currency))}");
+        csv.AppendLine();
+        csv.AppendLine("Date (UTC),Transaction Type,Direction,Amount,Balance After,Status,Reference,Note");
+
         foreach (var transaction in transactions)
         {
+            var direction = IsDebit(transaction) ? "Debit" : "Credit";
             csv.AppendLine(string.Join(",",
-                EscapeCsv(transaction.Id.ToString()),
-                EscapeCsv(transaction.Type),
-                transaction.Amount.ToString("0.00", CultureInfo.InvariantCulture),
-                transaction.BalanceAfter.ToString("0.00", CultureInfo.InvariantCulture),
+                EscapeCsv(transaction.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
+                EscapeCsv(ToDisplayTransactionType(transaction.Type)),
+                EscapeCsv(direction),
+                EscapeCsv(FormatSignedCurrency(transaction.Amount, wallet.Currency, IsDebit(transaction))),
+                EscapeCsv(FormatCurrency(transaction.BalanceAfter, wallet.Currency)),
                 EscapeCsv(transaction.Status),
                 EscapeCsv(transaction.Reference),
-                EscapeCsv(transaction.Note ?? string.Empty),
-                EscapeCsv(transaction.CreatedAt.ToString("O", CultureInfo.InvariantCulture))));
+                EscapeCsv(transaction.Note ?? string.Empty)));
         }
 
         return new ExportFileResult(
-            Encoding.UTF8.GetBytes(csv.ToString()),
+            new UTF8Encoding(true).GetBytes(csv.ToString()),
             "text/csv",
-            $"wallet-history-{DateTime.UtcNow:yyyyMMddHHmmss}.csv");
+            $"wallet-statement-{DateTime.UtcNow:yyyyMMddHHmmss}.csv");
     }
 
     public async Task<ExportFileResult?> ExportHistoryPdfAsync(Guid userId)
     {
-        var transactions = await GetHistoryRecordsAsync(userId);
-        if (transactions == null) return null;
+        var wallet = await _repo.GetWalletByUserIdAsync(userId);
+        if (wallet == null) return null;
 
-        var lines = new List<string>
-        {
-            "Wallet Transaction History",
-            $"Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC",
-            string.Empty
-        };
-
-        foreach (var transaction in transactions.Take(25))
-        {
-            lines.Add($"{transaction.CreatedAt:yyyy-MM-dd HH:mm} | {transaction.Type} | {transaction.Amount:0.00} | Bal {transaction.BalanceAfter:0.00}");
-            lines.Add($"Ref {transaction.Reference}{(string.IsNullOrWhiteSpace(transaction.Note) ? string.Empty : $" | {transaction.Note}")}");
-        }
+        var transactions = await _repo.GetTransactionsForWalletAsync(wallet.Id);
+        var authUser = await GetAuthUserAsync(userId);
+        var userFullName = string.IsNullOrWhiteSpace(authUser?.FullName) ? "N/A" : authUser!.FullName;
+        var report = BuildStatementReport(wallet, userId, userFullName, transactions, DateTime.UtcNow);
 
         return new ExportFileResult(
-            BuildSimplePdf(lines),
+            BuildProfessionalPdf(report),
             "application/pdf",
-            $"wallet-history-{DateTime.UtcNow:yyyyMMddHHmmss}.pdf");
+            $"wallet-statement-{DateTime.UtcNow:yyyyMMddHHmmss}.pdf");
     }
 
     public async Task<ApiResponse<WalletResponse>> AdjustWalletAsync(AdjustWalletRequest req)
@@ -467,37 +479,228 @@ public class WalletService : IWalletService
         return $"\"{escaped}\"";
     }
 
-    private static byte[] BuildSimplePdf(List<string> lines)
+    private static StatementReport BuildStatementReport(
+        Wallet wallet,
+        Guid userId,
+        string userFullName,
+        List<WalletTransaction> transactions,
+        DateTime generatedAtUtc)
     {
-        static string EscapePdf(string input) =>
-            input.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
-
-        var content = new StringBuilder();
-        content.AppendLine("BT");
-        content.AppendLine("/F1 11 Tf");
-        content.AppendLine("50 780 Td");
-
-        var isFirstLine = true;
-        foreach (var line in lines)
+        var rows = transactions.Select(t =>
         {
-            if (!isFirstLine)
-                content.AppendLine("0 -16 Td");
+            var isDebit = IsDebit(t);
+            return new StatementRow(
+                t.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                ToDisplayTransactionType(t.Type),
+                isDebit ? "Debit" : "Credit",
+                FormatSignedCurrency(t.Amount, wallet.Currency, isDebit),
+                FormatCurrency(t.BalanceAfter, wallet.Currency),
+                t.Status,
+                t.Reference,
+                t.Note ?? string.Empty);
+        }).ToList();
 
-            content.AppendLine($"({EscapePdf(line)}) Tj");
-            isFirstLine = false;
+        return new StatementReport(
+            wallet.Id.ToString(),
+            userId.ToString(),
+            userFullName,
+            wallet.Currency,
+            FormatCurrency(wallet.Balance, wallet.Currency),
+            FormatCurrency(transactions.Where(IsCredit).Sum(t => Math.Abs(t.Amount)), wallet.Currency),
+            FormatCurrency(transactions.Where(IsDebit).Sum(t => Math.Abs(t.Amount)), wallet.Currency),
+            transactions.Count.ToString(CultureInfo.InvariantCulture),
+            generatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+            rows);
+    }
+
+    private static bool IsDebit(WalletTransaction transaction) =>
+        transaction.Amount < 0 || transaction.Type is "transfer_out";
+
+    private static bool IsCredit(WalletTransaction transaction) => !IsDebit(transaction);
+
+    private static string ToDisplayTransactionType(string type)
+    {
+        if (string.IsNullOrWhiteSpace(type)) return "Transaction";
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(type.Replace("_", " ").ToLowerInvariant());
+    }
+
+    private static string FormatCurrency(decimal value, string currency) =>
+        $"{currency.ToUpperInvariant()} {value:0.00}";
+
+    private static string FormatSignedCurrency(decimal value, string currency, bool isDebit)
+    {
+        var amount = Math.Abs(value);
+        var sign = isDebit ? "-" : "+";
+        return $"{currency.ToUpperInvariant()} {sign}{amount:0.00}";
+    }
+
+    private static byte[] BuildProfessionalPdf(StatementReport report)
+    {
+        var pages = BuildPdfPages(report);
+        return BuildPdfDocument(pages);
+    }
+
+    private static List<string> BuildPdfPages(StatementReport report)
+    {
+        const double left = 40;
+        const double topHeaderStart = 720;
+        const double bottomMargin = 56;
+        const double rowHeight = 18;
+        const double tableWidth = 532;
+        var columnWidths = new[] { 86d, 80d, 60d, 72d, 72d, 56d, 64d, 42d };
+        var columnHeaders = new[] { "Date (UTC)", "Type", "Dir", "Amount", "Balance", "Status", "Reference", "Note" };
+        var rowIndex = 0;
+        var pageNumber = 1;
+        var pages = new List<string>();
+
+        while (rowIndex < report.Rows.Count || (report.Rows.Count == 0 && pageNumber == 1))
+        {
+            var canvas = new PdfCanvas();
+            var isFirstPage = pageNumber == 1;
+
+            if (isFirstPage)
+            {
+                canvas.FillRect(0, topHeaderStart, 612, 72, 0.05, 0.39, 0.45);
+                canvas.Text(left, 764, 18, "TRUNQO DIGITAL WALLET", true, 1, 1, 1);
+                canvas.Text(left, 744, 10, "Account Statement", false, 0.86, 0.95, 0.96);
+                canvas.Text(420, 764, 10, $"Generated: {report.GeneratedAtUtc} UTC", false, 0.86, 0.95, 0.96);
+                canvas.Text(420, 748, 10, $"Wallet: {report.WalletId}", false, 0.86, 0.95, 0.96);
+
+                DrawSummaryCard(canvas, left, 650, 168, 56, "Current Balance", report.CurrentBalance);
+                DrawSummaryCard(canvas, left + 182, 650, 168, 56, "Total Credits", report.TotalCredits);
+                DrawSummaryCard(canvas, left + 364, 650, 168, 56, "Total Debits", report.TotalDebits);
+                canvas.Text(left, 628, 9, $"Account Holder: {report.UserFullName}", false, 0.35, 0.39, 0.43);
+                canvas.Text(left, 614, 9, $"Transactions: {report.TotalTransactions}   User ID: {report.UserId}", false, 0.35, 0.39, 0.43);
+            }
+            else
+            {
+                canvas.FillRect(0, 748, 612, 44, 0.05, 0.39, 0.45);
+                canvas.Text(left, 766, 13, "TRUNQO ACCOUNT STATEMENT", true, 1, 1, 1);
+                canvas.Text(420, 766, 9, $"Wallet: {report.WalletId}", false, 0.86, 0.95, 0.96);
+            }
+
+            var tableTop = isFirstPage ? 600d : 716d;
+            DrawTableHeader(canvas, left, tableTop, tableWidth, columnWidths, columnHeaders);
+
+            var rowY = tableTop - rowHeight;
+            var rowsDrawnOnPage = 0;
+            while (rowIndex < report.Rows.Count && (rowY - rowHeight) > bottomMargin)
+            {
+                var row = report.Rows[rowIndex];
+                var striped = rowsDrawnOnPage % 2 == 1;
+                if (striped)
+                {
+                    canvas.FillRect(left, rowY - rowHeight + 1, tableWidth, rowHeight - 1, 0.97, 0.98, 0.99);
+                }
+
+                var note = Truncate(row.Note, 18);
+                var values = new[]
+                {
+                    row.DateUtc,
+                    Truncate(row.Type, 14),
+                    row.Direction,
+                    row.Amount,
+                    row.BalanceAfter,
+                    Truncate(row.Status, 10),
+                    Truncate(row.Reference, 12),
+                    note
+                };
+
+                DrawRow(canvas, left, rowY, columnWidths, values);
+
+                rowIndex++;
+                rowsDrawnOnPage++;
+                rowY -= rowHeight;
+            }
+
+            if (report.Rows.Count == 0 && pageNumber == 1)
+            {
+                canvas.Text(left + 170, tableTop - 58, 12, "No transactions available for this period.", false, 0.3, 0.34, 0.38);
+            }
+
+            canvas.StrokeLine(left, 44, left + tableWidth, 44, 0.8, 0.84, 0.88, 1);
+            canvas.Text(left, 30, 9, "This is a system-generated statement from Trunqo.", false, 0.38, 0.42, 0.46);
+            canvas.Text(500, 30, 9, $"Page {pageNumber}", false, 0.38, 0.42, 0.46);
+
+            pages.Add(canvas.ToString());
+            pageNumber++;
         }
 
-        content.AppendLine("ET");
-        var contentStream = content.ToString();
+        return pages;
+    }
 
-        var objects = new List<string>
+    private static void DrawSummaryCard(PdfCanvas canvas, double x, double y, double width, double height, string title, string value)
+    {
+        canvas.FillRect(x, y, width, height, 0.96, 0.98, 1);
+        canvas.StrokeRect(x, y, width, height, 0.82, 0.88, 0.93, 1);
+        canvas.Text(x + 10, y + 38, 9, title, false, 0.29, 0.34, 0.39);
+        canvas.Text(x + 10, y + 18, 13, value, true, 0.06, 0.42, 0.48);
+    }
+
+    private static void DrawTableHeader(
+        PdfCanvas canvas,
+        double left,
+        double y,
+        double tableWidth,
+        IReadOnlyList<double> widths,
+        IReadOnlyList<string> headers)
+    {
+        canvas.FillRect(left, y - 18, tableWidth, 18, 0.07, 0.11, 0.17);
+        canvas.StrokeRect(left, y - 18, tableWidth, 18, 0.16, 0.2, 0.27, 1);
+
+        var x = left + 4;
+        for (var i = 0; i < headers.Count; i++)
         {
-            "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
-            "2 0 obj << /Type /Pages /Count 1 /Kids [3 0 R] >> endobj\n",
-            "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n",
-            "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
-            $"5 0 obj << /Length {Encoding.ASCII.GetByteCount(contentStream)} >> stream\n{contentStream}endstream\nendobj\n"
-        };
+            canvas.Text(x, y - 13, 8, headers[i], true, 1, 1, 1);
+            x += widths[i];
+        }
+    }
+
+    private static void DrawRow(PdfCanvas canvas, double left, double y, IReadOnlyList<double> widths, IReadOnlyList<string> values)
+    {
+        var x = left + 4;
+        for (var i = 0; i < values.Count; i++)
+        {
+            canvas.Text(x, y - 13, 8, values[i], false, 0.12, 0.16, 0.2);
+            x += widths[i];
+        }
+    }
+
+    private static byte[] BuildPdfDocument(IReadOnlyList<string> pagesContent)
+    {
+        var objectStrings = new List<string>();
+        var fontRegularId = 3;
+        var fontBoldId = 4;
+
+        var pageObjectIds = new List<int>();
+        var contentObjectIds = new List<int>();
+        for (var i = 0; i < pagesContent.Count; i++)
+        {
+            pageObjectIds.Add(5 + (i * 2));
+            contentObjectIds.Add(6 + (i * 2));
+        }
+
+        var kids = string.Join(" ", pageObjectIds.Select(id => $"{id} 0 R"));
+        objectStrings.Add("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n");
+        objectStrings.Add($"2 0 obj << /Type /Pages /Count {pagesContent.Count} /Kids [{kids}] >> endobj\n");
+        objectStrings.Add($"{fontRegularId} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n");
+        objectStrings.Add($"{fontBoldId} 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj\n");
+
+        for (var i = 0; i < pagesContent.Count; i++)
+        {
+            var pageId = pageObjectIds[i];
+            var contentId = contentObjectIds[i];
+            var content = pagesContent[i];
+
+            objectStrings.Add(
+                $"{pageId} 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " +
+                $"/Resources << /Font << /F1 {fontRegularId} 0 R /F2 {fontBoldId} 0 R >> >> " +
+                $"/Contents {contentId} 0 R >> endobj\n");
+
+            objectStrings.Add(
+                $"{contentId} 0 obj << /Length {Encoding.ASCII.GetByteCount(content)} >> stream\n" +
+                $"{content}endstream\nendobj\n");
+        }
 
         using var stream = new MemoryStream();
         using var writer = new StreamWriter(stream, Encoding.ASCII, leaveOpen: true);
@@ -506,7 +709,7 @@ public class WalletService : IWalletService
         writer.Flush();
 
         var offsets = new List<long> { 0 };
-        foreach (var obj in objects)
+        foreach (var obj in objectStrings)
         {
             offsets.Add(stream.Position);
             writer.Write(obj);
@@ -514,18 +717,83 @@ public class WalletService : IWalletService
         }
 
         var xrefStart = stream.Position;
-        writer.Write($"xref\n0 {objects.Count + 1}\n");
+        writer.Write($"xref\n0 {objectStrings.Count + 1}\n");
         writer.Write("0000000000 65535 f \n");
-        for (var i = 1; i <= objects.Count; i++)
+        for (var i = 1; i <= objectStrings.Count; i++)
         {
             writer.Write($"{offsets[i]:D10} 00000 n \n");
         }
 
-        writer.Write($"trailer << /Size {objects.Count + 1} /Root 1 0 R >>\n");
+        writer.Write($"trailer << /Size {objectStrings.Count + 1} /Root 1 0 R >>\n");
         writer.Write($"startxref\n{xrefStart}\n%%EOF");
         writer.Flush();
-
         return stream.ToArray();
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxLength) return value;
+        return $"{value[..(maxLength - 3)]}...";
+    }
+
+    private sealed record StatementReport(
+        string WalletId,
+        string UserId,
+        string UserFullName,
+        string Currency,
+        string CurrentBalance,
+        string TotalCredits,
+        string TotalDebits,
+        string TotalTransactions,
+        string GeneratedAtUtc,
+        IReadOnlyList<StatementRow> Rows);
+
+    private sealed record StatementRow(
+        string DateUtc,
+        string Type,
+        string Direction,
+        string Amount,
+        string BalanceAfter,
+        string Status,
+        string Reference,
+        string Note);
+
+    private sealed class PdfCanvas
+    {
+        private readonly StringBuilder _sb = new();
+
+        public void FillRect(double x, double y, double width, double height, double r, double g, double b)
+        {
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} rg\n", r, g, b);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.##} {1:0.##} {2:0.##} {3:0.##} re f\n", x, y, width, height);
+        }
+
+        public void StrokeRect(double x, double y, double width, double height, double r, double g, double b, double lineWidth)
+        {
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} RG\n", r, g, b);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.##} w\n", lineWidth);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.##} {1:0.##} {2:0.##} {3:0.##} re S\n", x, y, width, height);
+        }
+
+        public void StrokeLine(double x1, double y1, double x2, double y2, double r, double g, double b, double lineWidth)
+        {
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} RG\n", r, g, b);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.##} w\n", lineWidth);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.##} {1:0.##} m {2:0.##} {3:0.##} l S\n", x1, y1, x2, y2);
+        }
+
+        public void Text(double x, double y, int size, string text, bool bold, double r, double g, double b)
+        {
+            var safeText = text.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
+            _sb.Append("BT\n");
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "/{0} {1} Tf\n", bold ? "F2" : "F1", size);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.###} {1:0.###} {2:0.###} rg\n", r, g, b);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "{0:0.##} {1:0.##} Td\n", x, y);
+            _sb.AppendFormat(CultureInfo.InvariantCulture, "({0}) Tj\n", safeText);
+            _sb.Append("ET\n");
+        }
+
+        public override string ToString() => _sb.ToString();
     }
 
     private static WalletResponse MapWallet(Wallet wallet) =>

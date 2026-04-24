@@ -25,10 +25,19 @@ public class TokenService : ITokenService
 
     public string GenerateToken(User user)
     {
+        var jwtKey = _config["Jwt:Key"] ?? string.Empty;
+        var keyBytes = Encoding.UTF8.GetBytes(jwtKey);
+        if (keyBytes.Length < 32)
+        {
+            throw new InvalidOperationException(
+                "Jwt:Key must be at least 32 characters (256 bits). " +
+                "Set a stronger value via configuration, e.g. Jwt__Key environment variable.");
+        }
+
         // Step 1 — Create signing key from our secret in appsettings.json
         // Must be at least 32 characters long
         var key = new SymmetricSecurityKey(
-                        Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+                        keyBytes);
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         // Step 2 — Claims are pieces of info baked INTO the token

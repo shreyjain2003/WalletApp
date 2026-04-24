@@ -76,6 +76,18 @@ public class EmailNotificationService : IEmailNotificationService
         var password = _config["Email:Password"];
         var fromName = _config["Email:FromName"] ?? "Trunqo";
 
+        if (string.IsNullOrWhiteSpace(host) ||
+            string.IsNullOrWhiteSpace(username) ||
+            string.IsNullOrWhiteSpace(password) ||
+            string.IsNullOrWhiteSpace(fromEmail) ||
+            IsPlaceholder(username) ||
+            IsPlaceholder(password) ||
+            IsPlaceholder(fromEmail))
+        {
+            _logger.LogWarning("Email is enabled but SMTP configuration is incomplete. Skipping email send.");
+            return;
+        }
+
         using var client = new SmtpClient(host, port)
         {
             EnableSsl = useSsl,
@@ -193,6 +205,9 @@ public class EmailNotificationService : IEmailNotificationService
         </div>
         """;
     }
+
+    private static bool IsPlaceholder(string value) =>
+        value.StartsWith("__TRUNQO_", StringComparison.Ordinal);
 }
 
 public record AuthUserResponse(bool Success, string Message, AuthUserData? Data);

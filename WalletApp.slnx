@@ -1,9 +1,0 @@
-<Solution>
-  <Project Path="backend/AdminService/AdminService.csproj" />
-  <Project Path="backend/AuthService/AuthService.csproj" />
-  <Project Path="backend/Gateway/Gateway.csproj" />
-  <Project Path="backend/NotificationService/NotificationService.csproj" />
-  <Project Path="backend/RewardService/RewardService.csproj" />
-  <Project Path="backend/tests/WalletApp.UnitTests/WalletApp.UnitTests.csproj" />
-  <Project Path="backend/WalletService/WalletService.csproj" />
-</Solution>

@@ -1,17 +1,21 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { SetPin } from './set-pin';
+import { SetPinComponent } from './set-pin';
 
-describe('SetPin', () => {
-  let component: SetPin;
-  let fixture: ComponentFixture<SetPin>;
+describe('SetPinComponent', () => {
+  let component: SetPinComponent;
+  let fixture: ComponentFixture<SetPinComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [SetPin],
+      imports: [SetPinComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(SetPin);
+    fixture = TestBed.createComponent(SetPinComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

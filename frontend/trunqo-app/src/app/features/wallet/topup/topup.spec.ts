@@ -1,17 +1,21 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { Topup } from './topup';
+import { TopupComponent } from './topup';
 
-describe('Topup', () => {
-  let component: Topup;
-  let fixture: ComponentFixture<Topup>;
+describe('TopupComponent', () => {
+  let component: TopupComponent;
+  let fixture: ComponentFixture<TopupComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Topup],
+      imports: [TopupComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Topup);
+    fixture = TestBed.createComponent(TopupComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

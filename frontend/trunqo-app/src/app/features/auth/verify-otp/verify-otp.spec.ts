@@ -1,17 +1,21 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { VerifyOtp } from './verify-otp';
+import { VerifyOtpComponent } from './verify-otp';
 
-describe('VerifyOtp', () => {
-  let component: VerifyOtp;
-  let fixture: ComponentFixture<VerifyOtp>;
+describe('VerifyOtpComponent', () => {
+  let component: VerifyOtpComponent;
+  let fixture: ComponentFixture<VerifyOtpComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [VerifyOtp],
+      imports: [VerifyOtpComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(VerifyOtp);
+    fixture = TestBed.createComponent(VerifyOtpComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

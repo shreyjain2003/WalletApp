@@ -12,8 +12,19 @@ var builder = WebApplication.CreateBuilder(args);
 // ── 1. Register NotificationService (MongoDB) ──────────────────────────────
 builder.Services.AddScoped<INotificationService,
     NotificationService.Services.NotificationService>();
-builder.Services.AddScoped<INotificationRepository,
-    NotificationService.Repositories.NotificationRepository>();
+var mongoConnectionString = builder.Configuration["MongoDB:ConnectionString"];
+var mongoConfigured = !string.IsNullOrWhiteSpace(mongoConnectionString)
+    && !mongoConnectionString.StartsWith("__TRUNQO_", StringComparison.Ordinal);
+if (mongoConfigured)
+{
+    builder.Services.AddScoped<INotificationRepository,
+        NotificationService.Repositories.NotificationRepository>();
+}
+else
+{
+    builder.Services.AddSingleton<INotificationRepository,
+        NotificationService.Repositories.InMemoryNotificationRepository>();
+}
 builder.Services.AddScoped<IEmailNotificationService,
     NotificationService.Services.EmailNotificationService>();
 

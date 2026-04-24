@@ -1,17 +1,21 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { Notifications } from './notifications';
+import { NotificationsComponent } from './notifications';
 
-describe('Notifications', () => {
-  let component: Notifications;
-  let fixture: ComponentFixture<Notifications>;
+describe('NotificationsComponent', () => {
+  let component: NotificationsComponent;
+  let fixture: ComponentFixture<NotificationsComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Notifications],
+      imports: [NotificationsComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Notifications);
+    fixture = TestBed.createComponent(NotificationsComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

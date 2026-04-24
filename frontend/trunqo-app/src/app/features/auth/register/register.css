@@ -1,15 +1,17 @@
 .register-card {
   max-width: 520px;
+  width: 100%;
 }
 
 .field-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
 
 .field-group {
   margin-bottom: 16px;
+  min-width: 0;
 }
 
 .toggle-pass {
@@ -44,6 +46,17 @@
 .wa-btn-primary,
 .wa-btn-outline {
   width: 100%;
+}
+
+.wa-input-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wa-input-wrap input {
+  width: 100%;
+  min-width: 0;
 }
 
 @media (max-width: 640px) {

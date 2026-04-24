@@ -101,6 +101,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/admin/user-list/user-list').then(m => m.UserListComponent),
     canActivate: [adminGuard]
   },
+  {
+    path: 'admin/campaigns',
+    loadComponent: () => import('./features/admin/campaign-control/campaign-control').then(m => m.CampaignControlComponent),
+    canActivate: [adminGuard]
+  },
   
   // Custom 404
   { path: '**', redirectTo: 'not-found' },
@@ -109,4 +114,3 @@ export const routes: Routes = [
     loadComponent: () => import('./features/not-found/not-found').then(m => m.NotFoundComponent)
   }
 ];
-

@@ -24,6 +24,7 @@ import { ApiService } from '../../../core/services/api';
         <div class="nav-content">
           <span class="brand"><mat-icon style="margin-right:8px; vertical-align:middle;">admin_panel_settings</mat-icon>Admin Panel</span>
           <div class="nav-links">
+            <a style="cursor:pointer;" routerLink="/admin/campaigns">Campaigns</a>
             <a style="cursor:pointer;" routerLink="/admin/tickets">Tickets</a>
             <a style="cursor:pointer;" routerLink="/admin/users">Users</a>
             <a style="cursor:pointer;" (click)="logout()"><mat-icon>logout</mat-icon> Logout</a>

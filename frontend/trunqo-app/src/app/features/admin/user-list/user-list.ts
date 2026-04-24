@@ -131,6 +131,7 @@ import { AuthService } from '../../../core/services/auth';
           <div class="nav-links">
             <a style="cursor:pointer;" routerLink="/admin/kyc">KYC</a>
             <a style="cursor:pointer;" routerLink="/admin/tickets">Tickets</a>
+            <a style="cursor:pointer;" routerLink="/admin/campaigns">Campaigns</a>
             <a style="cursor:pointer;" (click)="logout()"><mat-icon>logout</mat-icon> Logout</a>
           </div>
         </div>

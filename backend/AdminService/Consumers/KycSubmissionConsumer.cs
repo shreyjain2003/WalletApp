@@ -55,14 +55,32 @@ public class KycSubmissionConsumer : BackgroundService
 
                         if (message != null)
                         {
+                            var fullName = message.FullName?.Trim();
+                            var email = message.Email?.Trim();
+                            var documentType = message.DocumentType?.Trim();
+                            var documentNumber = message.DocumentNumber?.Trim();
+                            if (string.IsNullOrWhiteSpace(fullName) ||
+                                string.IsNullOrWhiteSpace(email) ||
+                                string.IsNullOrWhiteSpace(documentType) ||
+                                string.IsNullOrWhiteSpace(documentNumber))
+                            {
+                                _logger.LogWarning(
+                                    "Skipping invalid KYC submission for user {UserId}: missing required fields.",
+                                    message.UserId);
+                                _channel?.BasicAck(ea.DeliveryTag, false);
+                                return;
+                            }
+
                             using var scope = _services.CreateScope();
                             var repo = scope.ServiceProvider.GetRequiredService<IAdminRepository>();
                             var existing = await repo.GetKycReviewByUserIdAsync(message.UserId);
 
                             if (existing != null)
                             {
-                                existing.DocumentType = message.DocumentType;
-                                existing.DocumentNumber = message.DocumentNumber;
+                                existing.UserFullName = fullName;
+                                existing.UserEmail = email;
+                                existing.DocumentType = documentType;
+                                existing.DocumentNumber = documentNumber;
                                 existing.Status = "Pending";
                                 existing.AdminNote = null;
                                 existing.ReviewedBy = null;
@@ -75,10 +93,10 @@ public class KycSubmissionConsumer : BackgroundService
                                 {
                                     Id = Guid.NewGuid(),
                                     UserId = message.UserId,
-                                    UserFullName = message.FullName,
-                                    UserEmail = message.Email,
-                                    DocumentType = message.DocumentType,
-                                    DocumentNumber = message.DocumentNumber,
+                                    UserFullName = fullName,
+                                    UserEmail = email,
+                                    DocumentType = documentType,
+                                    DocumentNumber = documentNumber,
                                     Status = "Pending",
                                     SubmittedAt = message.SubmittedAt
                                 };
@@ -94,7 +112,7 @@ public class KycSubmissionConsumer : BackgroundService
                     catch (Exception ex)
                     {
                         _logger.LogError("Failed to process KYC submission: {msg}", ex.Message);
-                        _channel?.BasicNack(ea.DeliveryTag, false, true);
+                        _channel?.BasicNack(ea.DeliveryTag, false, false);
                     }
                 });
             };
@@ -120,9 +138,9 @@ public class KycSubmissionConsumer : BackgroundService
 
 public record KycSubmissionEvent(
     Guid UserId,
-    string FullName,
-    string Email,
-    string DocumentType,
-    string DocumentNumber,
+    string? FullName,
+    string? Email,
+    string? DocumentType,
+    string? DocumentNumber,
     DateTime SubmittedAt
 );
