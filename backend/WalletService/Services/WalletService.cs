@@ -146,9 +146,13 @@ public class WalletService : IWalletService
         await _repo.SaveChangesAsync();
 
         _mq.Publish("wallet_topup", new { UserId = userId.ToString(), Amount = req.Amount, Reference = tx.Reference });
+
+        // Fetch user email for direct delivery — avoids fallback HTTP lookup in NotificationService
+        var topupUser = await GetAuthUserAsync(userId);
         _mq.Publish("notifications", new
         {
             UserId = userId.ToString(),
+            Email = topupUser?.Email,
             Title = "Top-up Successful",
             Message = $"Rs. {req.Amount} added to your wallet. New balance: Rs. {wallet.Balance}",
             Type = "topup",
@@ -254,6 +258,7 @@ public class WalletService : IWalletService
         _mq.Publish("notifications", new
         {
             UserId = userId.ToString(),
+            Email = senderUser?.Email,
             Title = "Transfer Successful",
             Message = $"Rs. {req.Amount} sent. New balance: Rs. {senderWallet.Balance}",
             Type = "transfer_out",
@@ -269,6 +274,7 @@ public class WalletService : IWalletService
         _mq.Publish("notifications", new
         {
             UserId = req.ReceiverUserId.ToString(),
+            Email = receiverUser?.Email,
             Title = "Money Received",
             Message = $"Rs. {req.Amount} received. New balance: Rs. {receiverWallet.Balance}",
             Type = "transfer_in",

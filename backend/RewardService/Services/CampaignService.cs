@@ -8,6 +8,7 @@ namespace RewardService.Services;
 public interface ICampaignService
 {
     Task<ApiResponse<List<CampaignResponse>>> GetAllCampaignsAsync();
+    Task<ApiResponse<List<CampaignResponse>>> GetAvailableCampaignsAsync();
     Task<ApiResponse<CampaignResponse>> CreateCampaignAsync(CreateCampaignRequest request);
     Task<ApiResponse<CampaignResponse>> AddRuleAsync(Guid campaignId, AddCampaignRuleRequest request);
     Task<ApiResponse<List<CampaignRedemptionResponse>>> GetMyRedemptionsAsync(Guid userId);
@@ -38,6 +39,18 @@ public class CampaignService : ICampaignService
     {
         var campaigns = await _campaignRepo.GetAllCampaignsAsync();
         return new ApiResponse<List<CampaignResponse>>(true, "OK", campaigns.Select(MapCampaign).ToList());
+    }
+
+    public async Task<ApiResponse<List<CampaignResponse>>> GetAvailableCampaignsAsync()
+    {
+        // Returns only currently active campaigns that haven't expired — for user browsing
+        var now = DateTime.UtcNow;
+        var campaigns = await _campaignRepo.GetAllCampaignsAsync();
+        var available = campaigns
+            .Where(c => c.IsActive && c.StartAtUtc <= now && c.EndAtUtc >= now && c.Rules.Any(r => r.IsActive))
+            .OrderByDescending(c => c.Priority)
+            .ToList();
+        return new ApiResponse<List<CampaignResponse>>(true, "OK", available.Select(MapCampaign).ToList());
     }
 
     public async Task<ApiResponse<CampaignResponse>> CreateCampaignAsync(CreateCampaignRequest request)

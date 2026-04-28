@@ -139,6 +139,7 @@ public class AdminService : IAdminService
         _mq.Publish("notifications", new
         {
             UserId = review.UserId.ToString(),
+            Email = review.UserEmail,
             Title = $"KYC {req.Decision}",
             Message = req.Decision == "Approved"
                 ? "Your KYC has been approved. Your wallet is now active!"
@@ -170,6 +171,7 @@ public class AdminService : IAdminService
         _mq.Publish("notifications", new
         {
             UserId = ticket.UserId.ToString(),
+            Email = ticket.UserEmail,
             Title = "Support Ticket Responded",
             Message = $"Your ticket '{ticket.Subject}' has been responded to.",
             Type = "ticket_reply"

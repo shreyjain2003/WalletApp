@@ -133,6 +133,26 @@ using (var scope = app.Services.CreateScope())
             WHERE [Role] = 'Admin'
               AND LOWER([Email]) = 'admin@walletapp.com'
         ");
+
+        // Seed default admin user if none exists
+        var adminExists = await db.Users.AnyAsync(u => u.Role == "Admin");
+        if (!adminExists)
+        {
+            db.Users.Add(new AuthService.Models.User
+            {
+                Id = Guid.NewGuid(),
+                FullName = "Trunqo Admin",
+                Email = "admin@trunqo.com",
+                PhoneNumber = "9000000000",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123456"),
+                Role = "Admin",
+                Status = "Active",
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogInformation("Default admin user seeded: admin@trunqo.com / Admin@123456");
+        }
     }
     catch (Exception ex)
     {

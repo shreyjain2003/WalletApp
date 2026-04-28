@@ -32,6 +32,14 @@ public class CampaignController : ControllerBase
         return Ok(result);
     }
 
+    // Available active campaigns for regular users to browse
+    [HttpGet("available")]
+    public async Task<IActionResult> GetAvailableCampaigns()
+    {
+        var result = await _campaignService.GetAvailableCampaignsAsync();
+        return Ok(result);
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateCampaign([FromBody] CreateCampaignRequest request)

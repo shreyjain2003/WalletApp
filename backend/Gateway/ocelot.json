@@ -422,6 +422,18 @@
       ]
     },
     {
+      "UpstreamPathTemplate": "/api/rewards/campaigns/available",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/api/rewards/campaigns/available",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 5219
+        }
+      ]
+    },
+    {
       "UpstreamPathTemplate": "/api/rewards/campaigns/internal/evaluate",
       "UpstreamHttpMethod": [ "POST" ],
       "DownstreamPathTemplate": "/api/rewards/campaigns/internal/evaluate",

@@ -65,7 +65,7 @@ public class NotificationController : ControllerBase
     [HttpPost("internal/create")]
     public async Task<IActionResult> CreateInternal([FromBody] InternalNotificationRequest req)
     {
-        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey";
+        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey2024";
         if (!Request.Headers.TryGetValue("X-Internal-Api-Key", out var provided)
             || !string.Equals(provided.ToString(), expectedKey, StringComparison.Ordinal))
         {
