@@ -107,6 +107,40 @@ export const routes: Routes = [
     canActivate: [adminGuard]
   },
   
+  // Public info pages
+  {
+    path: 'features',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'pricing',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'security',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'about',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'careers',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'contact',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'privacy',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+  {
+    path: 'terms',
+    loadComponent: () => import('./features/public-pages/public-pages').then(m => m.PublicPagesComponent)
+  },
+
   // Custom 404
   { path: '**', redirectTo: 'not-found' },
   {
