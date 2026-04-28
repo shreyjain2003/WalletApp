@@ -74,7 +74,7 @@ public class PinController : ControllerBase
     public async Task<IActionResult> VerifyPinInternal(Guid userId, [FromBody] VerifyPinRequest req)
     {
         var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-        var expectedKey = config["InternalApiKey"] ?? "TrunqoInternalKey";
+        var expectedKey = config["InternalApiKey"] ?? "TrunqoInternalKey2024";
         if (!Request.Headers.TryGetValue("X-Internal-Api-Key", out var key) || key != expectedKey)
             return Unauthorized(new { success = false, message = "Unauthorized." });
 

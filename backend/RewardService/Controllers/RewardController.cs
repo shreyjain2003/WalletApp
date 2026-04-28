@@ -43,7 +43,7 @@ public class RewardController : ControllerBase
     [HttpPost("internal/add-points")]
     public async Task<IActionResult> AddPoints([FromBody] AddPointsRequest req)
     {
-        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey";
+        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey2024";
         if (!Request.Headers.TryGetValue("X-Internal-Api-Key", out var key) || key != expectedKey)
             throw new UnauthorizedAppException("Unauthorized internal request.");
 

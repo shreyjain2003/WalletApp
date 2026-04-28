@@ -144,6 +144,27 @@ public class UserController : ControllerBase
         return Ok(new ApiResponse<AuthUserInternalResponse>(true, "OK", MapInternal(user)));
     }
 
+    // Allows any authenticated user to look up another user's display name by email
+    // Used by the Transfer page to show receiver's name
+    [HttpGet("lookup-by-email")]
+    public async Task<IActionResult> LookupUserByEmail([FromQuery] string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            return BadRequest(new { success = false, message = "Email is required." });
+
+        var user = await _repo.GetUserByEmailAsync(email.ToLower().Trim());
+        if (user == null)
+            return NotFound(new { success = false, message = "User not found." });
+
+        // Only return safe public fields — no sensitive data
+        return Ok(new ApiResponse<object>(true, "OK", new
+        {
+            userId = user.Id,
+            fullName = user.FullName,
+            email = user.Email
+        }));
+    }
+
     [AllowAnonymous]
     [HttpGet("internal/users")]
     public async Task<IActionResult> GetAllUsersInternal()
@@ -236,7 +257,7 @@ public class UserController : ControllerBase
     private bool IsInternalRequest()
     {
         var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-        var expectedKey = config["InternalApiKey"] ?? "TrunqoInternalKey";
+        var expectedKey = config["InternalApiKey"] ?? "TrunqoInternalKey2024";
         return Request.Headers.TryGetValue("X-Internal-Api-Key", out var key) && key == expectedKey;
     }
 

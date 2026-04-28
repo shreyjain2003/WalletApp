@@ -286,7 +286,7 @@ export class TransferComponent implements OnInit {
       next: (res) => {
         if (res.success) {
           this.receiverUserId = res.data.userId;
-          this.api.get<any>(`/api/auth/internal/user-by-email?email=${this.receiverEmail}`).subscribe({
+          this.api.get<any>(`/api/auth/lookup-by-email?email=${encodeURIComponent(this.receiverEmail)}`).subscribe({
             next: (authRes) => { if (authRes.success) this.receiverName = authRes.data.fullName; this.lookingUp = false; },
             error: () => { this.receiverName = this.receiverEmail; this.lookingUp = false; }
           });

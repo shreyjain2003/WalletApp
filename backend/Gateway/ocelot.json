@@ -158,6 +158,18 @@
       ]
     },
     {
+      "UpstreamPathTemplate": "/api/auth/lookup-by-email",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/api/auth/lookup-by-email",
+      "DownstreamScheme": "https",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "localhost",
+          "Port": 7264
+        }
+      ]
+    },
+    {
       "UpstreamPathTemplate": "/api/auth/internal/users",
       "UpstreamHttpMethod": [ "GET" ],
       "DownstreamPathTemplate": "/api/auth/internal/users",
