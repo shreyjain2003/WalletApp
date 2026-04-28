@@ -62,10 +62,13 @@ public class AuthController : ControllerBase
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest request)
     {
+        if (request.NewPassword != request.ConfirmPassword)
+            return BadRequest(new { success = false, message = "Passwords do not match." });
+
         var success = await _auth.ResetPasswordAsync(request);
 
         if (!success)
-            return BadRequest(new { success = false, message = "Invalid request" });
+            return BadRequest(new { success = false, message = "Reset link is invalid or has expired. Please request a new OTP." });
 
         return Ok(new
         {

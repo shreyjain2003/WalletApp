@@ -126,6 +126,37 @@ using (var scope = app.Services.CreateScope())
             END
         ");
 
+        await db.Database.ExecuteSqlRawAsync(@"
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_NAME = 'PasswordResetSessions'
+            )
+            BEGIN
+                CREATE TABLE [PasswordResetSessions] (
+                    [Id]                     UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),
+                    [UserId]                 UNIQUEIDENTIFIER NOT NULL,
+                    [Purpose]                NVARCHAR(40)     NOT NULL,
+                    [OtpHash]                NVARCHAR(200)    NOT NULL,
+                    [ResetTokenHash]         NVARCHAR(200)    NULL,
+                    [OtpExpiresAtUtc]        DATETIME2        NOT NULL,
+                    [ResetTokenExpiresAtUtc] DATETIME2        NULL,
+                    [VerifiedAtUtc]          DATETIME2        NULL,
+                    [UsedAtUtc]              DATETIME2        NULL,
+                    [Attempts]               INT              NOT NULL DEFAULT 0,
+                    [MaxAttempts]            INT              NOT NULL DEFAULT 5,
+                    [CreatedAtUtc]           DATETIME2        NOT NULL DEFAULT GETUTCDATE(),
+                    [LastAttemptAtUtc]       DATETIME2        NULL,
+                    CONSTRAINT [PK_PasswordResetSessions] PRIMARY KEY ([Id]),
+                    CONSTRAINT [FK_PasswordResetSession_User] FOREIGN KEY ([UserId])
+                        REFERENCES [Users] ([Id]) ON DELETE CASCADE
+                );
+                CREATE INDEX [IX_PasswordResetSessions_UserId_Purpose_CreatedAtUtc]
+                    ON [PasswordResetSessions] ([UserId], [Purpose], [CreatedAtUtc]);
+                CREATE INDEX [IX_PasswordResetSessions_Purpose_OtpExpiresAtUtc]
+                    ON [PasswordResetSessions] ([Purpose], [OtpExpiresAtUtc]);
+            END
+        ");
+
         // Branding migration: keep existing databases compatible after WalletApp -> Trunqo rename.
         await db.Database.ExecuteSqlRawAsync(@"
             UPDATE [Users]
