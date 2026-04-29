@@ -13,6 +13,10 @@ export class App implements OnInit {
   constructor(private tokenRefresh: TokenRefreshService) { }
 
   ngOnInit(): void {
-    this.tokenRefresh.startAutoRefresh();
+    // Only start auto-refresh if user is already logged in (e.g. page reload)
+    const token = localStorage.getItem('token');
+    if (token) {
+      this.tokenRefresh.startAutoRefresh();
+    }
   }
 }

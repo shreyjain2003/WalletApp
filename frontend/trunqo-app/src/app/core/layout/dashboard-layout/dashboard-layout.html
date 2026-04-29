@@ -32,7 +32,7 @@
       <div class="topbar-right">
         <button class="icon-btn" routerLink="/notifications">
           <mat-icon>notifications</mat-icon>
-          <span class="badge-dot"></span>
+          <span class="badge-dot" *ngIf="hasUnreadNotifications"></span>
         </button>
         <div class="user-profile" [matMenuTriggerFor]="userMenu">
           <div class="avatar">{{ userInitials }}</div>
