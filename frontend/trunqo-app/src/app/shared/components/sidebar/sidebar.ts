@@ -69,7 +69,7 @@ import { AuthService } from '../../../core/services/auth';
           <mat-icon>support_agent</mat-icon><span>Support</span>
         </a>
         <a class="nav-item" routerLink="/set-pin" routerLinkActive="active" (click)="close.emit()">
-          <mat-icon>lock_outline</mat-icon><span>Transition PIN</span>
+          <mat-icon>lock_outline</mat-icon><span>Transaction PIN</span>
         </a>
       </nav>
 
