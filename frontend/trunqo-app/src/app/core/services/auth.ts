@@ -27,7 +27,7 @@ export class AuthService {
   private saveSession(data: any): void {
     localStorage.setItem('token', data.token);
     localStorage.setItem('userId', data.userId ?? data.adminId);
-    localStorage.setItem('role', data.role ?? 'Admin');
+    localStorage.setItem('role', data.role ?? 'User');
     localStorage.setItem('name', data.fullName);
 
     this.isLoggedInSubject.next(true);

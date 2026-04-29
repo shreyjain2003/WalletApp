@@ -269,6 +269,7 @@ import { AuthService } from '../../core/services/auth';
     .tx-icon-wrap.transfer_in { background: rgba(45, 106, 138, 0.1); color: var(--info); }
     .tx-icon-wrap.transfer_out { background: rgba(217, 72, 72, 0.1); color: var(--danger); }
     .tx-icon-wrap.admin_adjustment { background: var(--teal-dim); color: var(--teal); }
+    .tx-icon-wrap.cashback { background: rgba(59,130,246,0.1); color: #3B82F6; }
 
     .tx-info { flex: 1; }
     .tx-title { margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
@@ -279,6 +280,7 @@ import { AuthService } from '../../core/services/auth';
     .tx-amt.transfer_in { color: var(--info); }
     .tx-amt.transfer_out { color: var(--danger); }
     .tx-amt.admin_adjustment { color: var(--teal); }
+    .tx-amt.cashback { color: #3B82F6; }
 
     /* Quick Grid */
     .quick-access { background: var(--space-800); border: none; }
@@ -340,11 +342,11 @@ export class DashboardComponent implements OnInit {
   }
 
   txIcon(type: string): string {
-    const m: Record<string, string> = { topup: 'add_circle', transfer_in: 'call_received', transfer_out: 'call_made', admin_adjustment: 'tune' };
+    const m: Record<string, string> = { topup: 'add_circle', transfer_in: 'call_received', transfer_out: 'call_made', admin_adjustment: 'tune', cashback: 'local_offer' };
     return m[type] ?? 'sync_alt';
   }
   txLabel(type: string): string {
-    const m: Record<string, string> = { topup: 'Wallet Top Up', transfer_in: 'Money Received', transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment' };
+    const m: Record<string, string> = { topup: 'Wallet Top Up', transfer_in: 'Money Received', transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment', cashback: 'Cashback Reward' };
     return m[type] ?? type;
   }
 }

@@ -116,6 +116,7 @@ import { ApiService } from '../../../core/services/api';
     .tx-icon.transfer_in  { background: rgba(45,106,138,0.1); color: var(--info);}
     .tx-icon.transfer_out { background: rgba(217,72,72,0.1); color: var(--danger);}
     .tx-icon.admin_adjustment { background: var(--teal-dim); color: var(--teal);}
+    .tx-icon.cashback { background: rgba(59,130,246,0.1); color: #3B82F6; }
     
     .tx-label { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--text-primary); }
     .tx-note  { margin: 0; font-size: 13px; color: var(--text-secondary); font-style: italic; }
@@ -127,6 +128,7 @@ import { ApiService } from '../../../core/services/api';
     .amount-cell.transfer_in  { color: var(--info); }
     .amount-cell.transfer_out { color: var(--danger); }
     .amount-cell.admin_adjustment { color: var(--teal); }
+    .amount-cell.cashback { color: #3B82F6; }
     .bal-cell { font-size: 15px; font-weight: 600; color: var(--text-muted); font-family: 'Outfit', sans-serif;}
     .right { text-align: right; }
     
@@ -156,8 +158,8 @@ export class HistoryComponent implements OnInit {
     this.totalReceived = this.transactions.filter(t => t.type === 'topup' || t.type === 'transfer_in').reduce((s, t) => s + t.amount, 0);
     this.totalSent = this.transactions.filter(t => t.type === 'transfer_out').reduce((s, t) => s + t.amount, 0);
   }
-  getIcon(type: string): string { const m: Record<string,string> = { topup: 'add_circle', transfer_in: 'call_received', transfer_out: 'call_made', admin_adjustment: 'tune' }; return m[type] ?? 'swap_horiz'; }
-  getLabel(type: string): string { const m: Record<string,string> = { topup: 'Wallet Top Up', transfer_in: 'Money Received', transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment' }; return m[type] ?? type; }
+  getIcon(type: string): string { const m: Record<string,string> = { topup: 'add_circle', transfer_in: 'call_received', transfer_out: 'call_made', admin_adjustment: 'tune', cashback: 'local_offer' }; return m[type] ?? 'swap_horiz'; }
+  getLabel(type: string): string { const m: Record<string,string> = { topup: 'Wallet Top Up', transfer_in: 'Money Received', transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment', cashback: 'Cashback Reward' }; return m[type] ?? type; }
   downloadCsv(): void { this.api.download('/api/wallet/history/export/csv', `wallet-history-${new Date().toISOString().slice(0,10)}.csv`); }
   downloadPdf(): void { this.api.download('/api/wallet/history/export/pdf', `wallet-history-${new Date().toISOString().slice(0,10)}.pdf`); }
 }

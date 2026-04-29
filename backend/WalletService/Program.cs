@@ -22,6 +22,7 @@ builder.Services.AddScoped<IWalletRepository, WalletRepository>();
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 // Add RabbitMQ consumer
 builder.Services.AddHostedService<WalletService.Consumers.KycApprovalConsumer>();
+builder.Services.AddHostedService<WalletService.Consumers.CampaignCashbackConsumer>();
 
 // ── 3. JWT Authentication ──────────────────────────────────────────────────
 // WalletService uses the SAME JWT key as AuthService

@@ -577,7 +577,6 @@ export class UserListComponent implements OnInit {
           this.deleting = false;
         },
         error: (err) => {
-          console.error(err);
           this.snackBar.open('Failed to delete user.', 'Close', { duration: 3000 });
           this.deleting = false;
         }
