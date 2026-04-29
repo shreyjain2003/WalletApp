@@ -1,6 +1,9 @@
 ﻿using AuthService.DTOs;
+using AuthService.Repositories;
 using AuthService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace AuthService.Controllers;
 
@@ -9,10 +12,14 @@ namespace AuthService.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _auth;
+    private readonly ITokenService _tokenService;
+    private readonly IAuthRepository _repo;
 
-    public AuthController(IAuthService auth)
+    public AuthController(IAuthService auth, ITokenService tokenService, IAuthRepository repo)
     {
         _auth = auth;
+        _tokenService = tokenService;
+        _repo = repo;
     }
 
     [HttpPost("register")]
@@ -27,6 +34,25 @@ public class AuthController : ControllerBase
     {
         var result = await _auth.LoginAsync(req);
         return result.Success ? Ok(result) : Unauthorized(result);
+    }
+
+    // 🔄 TOKEN REFRESH — re-issues a fresh JWT for the current user
+    [Authorize]
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var user = await _repo.GetUserByIdAsync(userId);
+        if (user == null)
+            return Unauthorized(new { success = false, message = "User not found." });
+
+        var newToken = _tokenService.GenerateToken(user);
+
+        return Ok(new ApiResponse<AuthResponse>(true, "Token refreshed.",
+            new AuthResponse(newToken, user.Id.ToString(), user.FullName, user.Email, user.Role, user.Status)));
     }
 
     // 🔥 FORGOT PASSWORD

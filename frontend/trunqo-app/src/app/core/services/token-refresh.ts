@@ -29,13 +29,13 @@ export class TokenRefreshService implements OnDestroy {
 
       this.getAuthService().refreshToken().subscribe({
         next: (res: any) => {
-          if (res.success) {
+          if (res.success && res.data?.token) {
             localStorage.setItem('token', res.data.token);
-            console.log('Auto token refreshed');
+            if (res.data.status) localStorage.setItem('userStatus', res.data.status);
           }
         },
         error: () => {
-          console.warn('Token refresh failed — logging out.');
+          // Silently ignore refresh failures — interceptor handles 401s
         }
       });
     }, this.REFRESH_EVERY_MS);
@@ -55,14 +55,13 @@ export class TokenRefreshService implements OnDestroy {
 
     this.getAuthService().refreshToken().subscribe({
       next: (res: any) => {
-        if (res.success) {
+        if (res.success && res.data?.token) {
           localStorage.setItem('token', res.data.token);
-          console.log('Token refreshed. New status:', res.data.status);
-          
+          if (res.data.status) localStorage.setItem('userStatus', res.data.status);
         }
       },
       error: () => {
-        console.warn('Refresh failed — NOT logging out');
+        // Silently ignore — interceptor handles 401s globally
       }
     });
   }

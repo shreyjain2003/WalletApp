@@ -528,18 +528,6 @@
           "Port": 7264
         }
       ]
-    },
-    {
-      "UpstreamPathTemplate": "/api/auth/internal/user/{id}/kyc-decision",
-      "UpstreamHttpMethod": [ "POST" ],
-      "DownstreamPathTemplate": "/api/auth/internal/user/{id}/kyc-decision",
-      "DownstreamScheme": "https",
-      "DownstreamHostAndPorts": [
-        {
-          "Host": "localhost",
-          "Port": 7264
-        }
-      ]
     }
   ],
   "GlobalConfiguration": {
