@@ -158,6 +158,8 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
           this.transactions = res.data;
           this.calculateStats();
           this.recentTransactions = res.data.slice(0, 5);
+          // Render charts after data is ready, not on a blind timeout
+          setTimeout(() => this.renderCharts(), 100);
         }
         this.loading = false;
       },
@@ -169,7 +171,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
   }
 
   ngAfterViewInit(): void {
-    setTimeout(() => this.renderCharts(), 500);
+    // Charts are rendered after data loads in ngOnInit, not here
   }
 
   calculateStats(): void {

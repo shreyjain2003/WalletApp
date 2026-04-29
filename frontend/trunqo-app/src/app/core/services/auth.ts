@@ -93,9 +93,9 @@ export class AuthService {
   refreshToken(): Observable<any> {
     return this.api.post('/api/auth/refresh', {}).pipe(
       tap((res: any) => {
-        if (res.success) {
+        if (res.success && res.data?.token) {
           localStorage.setItem('token', res.data.token);
-          localStorage.setItem('userStatus', res.data.status);
+          if (res.data.status) localStorage.setItem('userStatus', res.data.status);
           this.isLoggedInSubject.next(true);
         }
       })

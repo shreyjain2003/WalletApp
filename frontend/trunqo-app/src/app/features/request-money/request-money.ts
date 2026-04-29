@@ -28,6 +28,28 @@ interface PaymentRequest {
       <div class="spinner"></div>
     </div>
 
+    <!-- PIN Modal for paying a request -->
+    <div class="pin-overlay" *ngIf="showPinPrompt">
+      <div class="pin-modal">
+        <div class="pin-header">
+          <div class="pin-icon"><mat-icon>lock</mat-icon></div>
+          <h3 class="card-title-small">Enter Transaction PIN</h3>
+          <p class="pin-desc">Confirm payment of &#8377;{{ pendingPayRequest?.amount | number:'1.0-0' }}</p>
+        </div>
+        <div class="pin-dots">
+          <div class="dot" *ngFor="let i of [0,1,2,3]" [class.filled]="enteredPin.length > i"></div>
+        </div>
+        <p class="pin-error" *ngIf="pinError">{{ pinError }}</p>
+        <div class="numpad">
+          <button class="num-btn" *ngFor="let n of [1,2,3,4,5,6,7,8,9]" (click)="pinKey(n.toString())">{{ n }}</button>
+          <button class="num-btn clear" (click)="pinClear()"><mat-icon>backspace</mat-icon></button>
+          <button class="num-btn" (click)="pinKey('0')">0</button>
+          <button class="num-btn confirm" [disabled]="enteredPin.length < 4" (click)="confirmPin()"><mat-icon>check</mat-icon></button>
+        </div>
+        <button class="cancel-pin" (click)="cancelPin()">Cancel</button>
+      </div>
+    </div>
+
     <div class="page-container fade-in">
       <div class="navbar">
         <button mat-icon-button routerLink="/dashboard" class="back-btn">
@@ -388,6 +410,27 @@ interface PaymentRequest {
     .req-status.paid     { background: rgba(45, 138, 86, 0.1); color: var(--success); }
     .req-status.declined { background: rgba(217, 72, 72, 0.1); color: var(--danger); }
     .req-status.pending  { background: rgba(229, 139, 36, 0.1); color: var(--warning); }
+
+    /* PIN Modal */
+    .pin-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .pin-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 32px 24px; width: 300px; box-shadow: 0 24px 64px rgba(0,0,0,0.5); text-align: center; animation: slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(40px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .pin-header { margin-bottom: 24px; }
+    .pin-icon { width: 56px; height: 56px; border-radius: 16px; background: rgba(192,133,82,0.1); border: 1px solid rgba(192,133,82,0.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+    .pin-icon mat-icon { color: var(--teal); font-size: 28px; width: 28px; height: 28px; }
+    .pin-desc { margin: 8px 0 0; font-size: 13px; color: var(--text-muted); }
+    .pin-dots { display: flex; justify-content: center; gap: 16px; margin-bottom: 12px; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); transition: all 0.2s; }
+    .dot.filled { background: var(--teal); border-color: var(--teal); transform: scale(1.2); }
+    .pin-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
+    .numpad { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; max-width: 240px; margin: 0 auto 16px; }
+    .num-btn { height: 54px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text-primary); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; font-family: 'Outfit', sans-serif; }
+    .num-btn:active { transform: scale(0.93); }
+    .num-btn.clear { background: rgba(239,68,68,0.1); color: var(--danger); border-color: rgba(239,68,68,0.2); }
+    .num-btn.confirm { background: var(--teal); color: #FFF; border-color: transparent; box-shadow: 0 4px 14px rgba(192,133,82,0.35); }
+    .num-btn.confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+    .cancel-pin { width: 100%; padding: 12px; border: none; background: transparent; color: var(--text-secondary); font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; }
+    .cancel-pin:hover { color: var(--danger); }
   `]
 })
 export class RequestMoneyComponent implements OnInit {
@@ -405,6 +448,12 @@ export class RequestMoneyComponent implements OnInit {
 
   receivedRequests: PaymentRequest[] = [];
   sentRequests: PaymentRequest[] = [];
+
+  // PIN prompt state
+  showPinPrompt = false;
+  enteredPin = '';
+  pinError = '';
+  pendingPayRequest: PaymentRequest | null = null;
 
   private currentUserId = '';
   private currentUserName = '';
@@ -436,7 +485,7 @@ export class RequestMoneyComponent implements OnInit {
     this.lookingUp = true;
 
     this.api.get<any>(
-      '/api/auth/internal/user-by-email?email=' + this.requestFromEmail)
+      '/api/auth/lookup-by-email?email=' + encodeURIComponent(this.requestFromEmail))
       .subscribe({
         next: (res) => {
           if (res.success) {
@@ -514,16 +563,52 @@ export class RequestMoneyComponent implements OnInit {
   }
 
   payRequest(req: PaymentRequest): void {
+    // Show PIN prompt instead of directly calling transfer
+    this.pendingPayRequest = req;
+    this.enteredPin = '';
+    this.pinError = '';
+    this.showPinPrompt = true;
+  }
+
+  pinKey(key: string): void {
+    if (this.enteredPin.length < 4) {
+      this.enteredPin += key;
+      this.pinError = '';
+    }
+  }
+
+  pinClear(): void {
+    if (this.enteredPin.length > 0) {
+      this.enteredPin = this.enteredPin.slice(0, -1);
+    }
+    this.pinError = '';
+  }
+
+  confirmPin(): void {
+    if (this.enteredPin.length < 4 || !this.pendingPayRequest) return;
+    this.showPinPrompt = false;
+    this.executePayment(this.pendingPayRequest, this.enteredPin);
+  }
+
+  cancelPin(): void {
+    this.showPinPrompt = false;
+    this.enteredPin = '';
+    this.pinError = '';
+    this.pendingPayRequest = null;
+  }
+
+  private executePayment(req: PaymentRequest, transactionPin: string): void {
     this.api.post<any>('/api/wallet/transfer', {
       receiverUserId: req.fromUserId,
       amount: req.amount,
-      note: `Payment for: ${req.note || 'request'}`
+      note: `Payment for: ${req.note || 'request'}`,
+      transactionPin
     }).subscribe({
       next: (res) => {
         if (res.success) {
           req.status = 'paid';
           this.updateRequest(req);
-          this.snackBar.open(`Paid request for ${req.amount}`, 'Close', { duration: 3000 });
+          this.snackBar.open(`Paid ₹${req.amount} successfully!`, 'Close', { duration: 3000 });
         } else {
           this.snackBar.open(res.message, 'Close', { duration: 3000 });
         }
