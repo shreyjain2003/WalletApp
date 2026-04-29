@@ -77,6 +77,21 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// ── Apply EF Migrations on startup ────────────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<RewardDbContext>();
+        await db.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Failed to apply RewardService database migrations.");
+    }
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseMiddleware<ExceptionHandlingMiddleware>();

@@ -308,7 +308,8 @@ public class WalletService : IWalletService
         var wallet = await _repo.GetWalletByUserIdAsync(userId);
         if (wallet == null) return null;
 
-        var transactions = await _repo.GetTransactionsForWalletAsync(wallet.Id);
+        // Fetch ALL transactions for export (no limit)
+        var transactions = await _repo.GetTransactionsForWalletAsync(wallet.Id, int.MaxValue);
         var generatedAtUtc = DateTime.UtcNow;
         var authUser = await GetAuthUserAsync(userId);
         var userFullName = string.IsNullOrWhiteSpace(authUser?.FullName) ? "N/A" : authUser!.FullName;
@@ -354,7 +355,8 @@ public class WalletService : IWalletService
         var wallet = await _repo.GetWalletByUserIdAsync(userId);
         if (wallet == null) return null;
 
-        var transactions = await _repo.GetTransactionsForWalletAsync(wallet.Id);
+        // Fetch ALL transactions for export (no limit)
+        var transactions = await _repo.GetTransactionsForWalletAsync(wallet.Id, int.MaxValue);
         var authUser = await GetAuthUserAsync(userId);
         var userFullName = string.IsNullOrWhiteSpace(authUser?.FullName) ? "N/A" : authUser!.FullName;
         var report = BuildStatementReport(wallet, userId, userFullName, transactions, DateTime.UtcNow);
