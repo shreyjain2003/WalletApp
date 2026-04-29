@@ -137,7 +137,7 @@ public class NotificationConsumer : BackgroundService
                     catch (Exception ex)
                     {
                         _logger.LogError("Failed to process notification: {msg}", ex.Message);
-                        _channel?.BasicNack(ea.DeliveryTag, false, false);
+                        _channel?.BasicNack(ea.DeliveryTag, false, true);
                     }
                 });
             };

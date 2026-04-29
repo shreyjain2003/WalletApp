@@ -174,7 +174,7 @@ static void WalletCsvExportIncludesTransactions()
     var file = service.ExportHistoryCsvAsync(userId).GetAwaiter().GetResult();
     var csv = System.Text.Encoding.UTF8.GetString(file!.Content);
 
-    AssertTrue(csv.Contains("Id,Type,Amount"), "csv should contain header row");
+    AssertTrue(csv.Contains("Trunqo Wallet Statement"), "csv should contain header");
     AssertTrue(csv.Contains("TP-1"), "csv should contain transaction reference");
 }
 
@@ -206,7 +206,7 @@ static IConfiguration BuildConfig() =>
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["AuthService:BaseUrl"] = "https://localhost:7264",
-            ["InternalApiKey"] = "TrunqoInternalKey"
+            ["InternalApiKey"] = "TrunqoInternalKey2024"
         })
         .Build();
 

@@ -112,7 +112,7 @@ public class KycSubmissionConsumer : BackgroundService
                     catch (Exception ex)
                     {
                         _logger.LogError("Failed to process KYC submission: {msg}", ex.Message);
-                        _channel?.BasicNack(ea.DeliveryTag, false, false);
+                        _channel?.BasicNack(ea.DeliveryTag, false, true);
                     }
                 });
             };
