@@ -13,10 +13,12 @@ namespace RewardService.Controllers;
 public class CampaignController : ControllerBase
 {
     private readonly ICampaignService _campaignService;
+    private readonly IConfiguration _config;
 
-    public CampaignController(ICampaignService campaignService)
+    public CampaignController(ICampaignService campaignService, IConfiguration config)
     {
         _campaignService = campaignService;
+        _config = config;
     }
 
     private Guid CurrentUserId =>
@@ -71,6 +73,11 @@ public class CampaignController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Evaluate([FromBody] EvaluateCampaignsRequest request)
     {
+        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey";
+        if (!Request.Headers.TryGetValue("X-Internal-Api-Key", out var providedKey)
+            || providedKey != expectedKey)
+            throw new UnauthorizedAppException("Unauthorized internal request.");
+
         var result = await _campaignService.EvaluateAndApplyAsync(
             request.UserId,
             request.TransactionType,

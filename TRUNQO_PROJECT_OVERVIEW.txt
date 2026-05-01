@@ -1,722 +1,403 @@
-﻿================================================================================
-TRUNQO - COMPLETE TECHNICAL PROJECT OVERVIEW
 ================================================================================
-Last Updated: April 2026
-Repository  : https://github.com/shreyjain2003/WalletApp
-Branch      : master
+TRUNQO - PROJECT OVERVIEW
+================================================================================
+Document Version : 2.1
+Last Updated     : April 2026
+Repository       : https://github.com/shreyjain2003/WalletApp
+Branch           : master
 
 ================================================================================
 1. WHAT IS TRUNQO?
 ================================================================================
-Trunqo is a full-stack digital wallet / fintech web application.
-It simulates a real-world payment platform (think simplified Paytm / PhonePe)
-where users can register, complete KYC, top up their wallet, transfer money,
-earn reward points, and receive email notifications for every transaction.
-Admins can manage users, review KYC documents, respond to support tickets,
-and create reward campaigns.
+Trunqo is a full-stack digital wallet and fintech web application. It models a
+payment platform where users can register, complete KYC, top up a wallet, send
+and request money, earn rewards, receive notifications, and manage support
+tickets.
+
+The project was originally named WalletApp, which is why the repository and some
+paths still use that name. The current product name used by the app is Trunqo.
+
+Primary user types:
+  1. Regular users  - wallet, KYC, transfers, requests, rewards, support
+  2. Administrators - KYC review, support replies, user management, campaigns
+
+The backend is split into independent ASP.NET Core 8 services that communicate
+through HTTP and RabbitMQ. The frontend is an Angular 21 single-page app.
 
 ================================================================================
-2. TECH STACK
+2. TECHNOLOGY STACK
 ================================================================================
-Layer               Technology
-------------------  -----------------------------------------------------------
-Frontend            Angular 21 (standalone components, lazy-loaded routes)
-Backend             .NET 8 (ASP.NET Core Web API) - 6 microservices
-Databases           SQL Server Express (5 services) + MongoDB Atlas (notifications)
-Message Broker      RabbitMQ (localhost:5672)
-API Gateway         Ocelot (single entry point for all frontend requests)
-Email               Gmail SMTP (smtp.gmail.com:587)
-Authentication      JWT Bearer tokens (HS256)
-Styling             Custom CSS design system - warm coffee theme
-IDE / Solution      Visual Studio / Trunqo.slnx
+Frontend:
+  - Angular 21 standalone components
+  - Angular Router with lazy-loaded routes
+  - Angular HTTP interceptors for JWT attachment
+  - Chart.js for analytics views
+  - Vitest/Angular unit test builder
 
-================================================================================
-3. ARCHITECTURE - MICROSERVICES
-================================================================================
-The backend is split into 6 independent services, each with its own database.
-They communicate via two channels:
-  - HTTP (synchronous)  : real-time lookups between services
-  - RabbitMQ (async)    : events that don't need an immediate response
-
-                    Browser (Angular :4200)
-                           |
-                           v
-                    Gateway :5000  <-- single entry point
-                           |
-          +----------------+----------------+------------------+
-          |                |                |                  |
-          v                v                v                  v
-   AuthService:7264  WalletService:5163  AdminService:5292  RewardService:5219
-   (HTTPS)           (HTTP)              (HTTP)             (HTTP)
-   DB: WalletAuth    DB: WalletWallet    DB: WalletAdmin    DB: WalletReward
-
-                    NotificationService:5125
-                    (HTTP)
-                    DB: MongoDB Atlas (WalletNotifications)
-
-Services also call each other DIRECTLY (bypassing gateway) using:
-  Header: X-Internal-Api-Key: TrunqoInternalKey2024
+Backend:
+  - .NET 8 / ASP.NET Core Web API
+  - Entity Framework Core 8 for SQL Server-backed services
+  - MongoDB for notification storage
+  - Ocelot API Gateway
+  - RabbitMQ for asynchronous events
+  - JWT authentication and role-based authorization
+  - BCrypt password/PIN hashing
+  - SMTP email notifications
 
 ================================================================================
-4. SERVICE PORT MAP
+3. REPOSITORY STRUCTURE
 ================================================================================
-Service               Port    Protocol    Database
---------------------  ------  ----------  ---------------------------
-Gateway (Ocelot)      5000    HTTP        None (pure proxy)
-AuthService           7264    HTTPS       SQL Server: WalletAuth
-WalletService         5163    HTTP        SQL Server: WalletWallet
-AdminService          5292    HTTP        SQL Server: WalletAdmin
-RewardService         5219    HTTP        SQL Server: WalletReward
-NotificationService   5125    HTTP        MongoDB Atlas
+Root:
+  - Trunqo.slnx
+  - README.md
+  - ARCHITECTURE.md
+  - TRUNQO_PROJECT_OVERVIEW.txt
 
-================================================================================
-5. SHARED CONFIGURATION (same across ALL services)
-================================================================================
-Jwt:Key        = "TrunqoAppSuperSecretKey2024MustBe32Chars!"
-Jwt:Issuer     = "Trunqo"
-Jwt:Audience   = "TrunqoUsers"
-InternalApiKey = "TrunqoInternalKey2024"
+Frontend:
+  - frontend/trunqo-app
+  - Source: frontend/trunqo-app/src/app
+  - Feature modules: frontend/trunqo-app/src/app/features
+  - Shared/core client code: frontend/trunqo-app/src/app/core
 
-Admin credentials: admin@trunqo.com / Admin@123456
+Backend:
+  - backend/AuthService
+  - backend/WalletService
+  - backend/AdminService
+  - backend/RewardService
+  - backend/NotificationService
+  - backend/Gateway
+  - backend/tests/Trunqo.UnitTests
 
-================================================================================
-6. SERVICE-BY-SERVICE BREAKDOWN
-================================================================================
-
---- 6.1 GATEWAY (Ocelot) - Port 5000 ---
-File: backend/Gateway/Program.cs
-File: backend/Gateway/ocelot.json
-
-Pure reverse proxy. No business logic.
-- Reads ocelot.json which maps every upstream route to a downstream service
-- Handles CORS: allows http://localhost:4200
-- Forwards JWT Authorization header as-is to downstream services
-- Each downstream service validates JWT independently
-
---- 6.2 AUTHSERVICE - Port 7264 (HTTPS) ---
-Directory: backend/AuthService/
-Database  : SQL Server - WalletAuth
-Tables    : Users, KycDocuments, TransactionPins, PasswordResetSessions
-
-Controllers:
-  AuthController.cs   - Register, Login, ForgotPassword, VerifyOTP, ResetPassword
-  UserController.cs   - Profile, KYC submit, internal user lookups, lookup-by-email
-  PinController.cs    - PIN set/change/remove, internal PIN verify endpoint
-
-Services:
-  AuthService.cs      - Core auth logic, BCrypt password hashing, JWT generation
-  TokenService.cs     - JWT token creation
-  RabbitMqPublisher.cs- Publishes to RabbitMQ queues
-
-Repositories:
-  AuthRepository.cs           - User CRUD, KYC, PasswordResetSession queries
-  TransactionPinRepository.cs - PIN hash storage and verification
-
-Consumers:
-  KycDecisionConsumer.cs - Listens to kyc_decisions queue; updates user status
-
-Key behaviors:
-  - Passwords: BCrypt hashed
-  - Transaction PINs: BCrypt hashed, 4-8 digits
-  - OTPs: 6-digit cryptographically random (RandomNumberGenerator), SHA-256 hashed before storage
-  - Reset tokens: GUID, SHA-256 hashed before storage, 10-minute expiry
-  - Tables auto-created on startup: TransactionPins, PasswordResetSessions
-  - Admin user seeded on startup if none exists
-  - JWT contains: userId, email, role claims
-
---- 6.3 WALLETSERVICE - Port 5163 (HTTP) ---
-Directory: backend/WalletService/
-Database  : SQL Server - WalletWallet
-Tables    : Wallets, WalletTransactions
-
-Controllers:
-  WalletController.cs - GET wallet, topup, transfer, history, CSV/PDF export,
-                        by-email lookup, admin adjust, admin lock
-
-Services:
-  WalletService.cs    - All financial logic
-
-Repositories:
-  WalletRepository.cs - Wallet and transaction CRUD, ExecuteInTransactionAsync
-
-Consumers:
-  KycApprovalConsumer.cs - Listens to kyc_decisions; auto-creates wallet on KYC approval
-
-Key behaviors:
-  - Wallet auto-created on first access or KYC approval
-  - Transfer flow (8 steps):
-      1. Validate amount > 0
-      2. Check sender KYC status = Active (calls AuthService internally)
-      3. Verify transaction PIN (calls AuthService internal PIN endpoint)
-      4. Check both wallets exist and are not locked
-      5. Check sufficient balance
-      6. Execute DB transaction (debit sender, credit receiver, 2 transaction records)
-      7. Publish to wallet_transfer_exchange (fanout) -> RewardService gets 10 pts event
-      8. Publish 2 notification events (sender + receiver emails)
-  - CSV export: formatted statement with summary rows
-  - PDF export: built from scratch using raw PDF spec (no third-party library)
-  - wallet_transfer publishes to FANOUT EXCHANGE so multiple consumers get it
-
---- 6.4 ADMINSERVICE - Port 5292 (HTTP) ---
-Directory: backend/AdminService/
-Database  : SQL Server - WalletAdmin
-Tables    : KycReviews, SupportTickets
-
-Controllers:
-  AdminController.cs - Admin login, KYC pending list, KYC decide,
-                       tickets list, ticket reply, submit ticket, my tickets
-
-Services:
-  AdminService.cs    - All admin logic, KYC sync from AuthService
-
-Consumers:
-  KycSubmissionConsumer.cs - Listens to kyc_submissions; stores KYC for admin review
-
-Key behaviors:
-  - Admin login: calls AuthService internally to verify credentials, returns JWT
-  - KYC sync: on startup AND on every GET /kyc/pending, fetches all users from
-    AuthService and syncs missing KYC records into local DB
-  - KYC decision: updates local DB, calls AuthService internal endpoint to update
-    user status, publishes kyc_decisions event to RabbitMQ
-  - Ticket reply: sends notification to user via RabbitMQ
-
---- 6.5 REWARDSERVICE - Port 5219 (HTTP) ---
-Directory: backend/RewardService/
-Database  : SQL Server - WalletReward
-Tables    : Rewards, RewardTransactions, Campaigns, CampaignRules, CampaignRedemptions
-
-Controllers:
-  RewardController.cs   - GET rewards, GET history, internal add-points
-  CampaignController.cs - GET campaigns (admin), GET available (user),
-                          POST create campaign, POST add rule,
-                          GET my-redemptions, POST internal/evaluate
-
-Services:
-  RewardService.cs   - Points logic, tier calculation, tier upgrade notifications
-  CampaignService.cs - Campaign CRUD, rule evaluation, redemption recording
-
-Consumers:
-  TransferEventConsumer.cs      - Listens to wallet_transfer_exchange (fanout);
-                                  awards 10 points to sender per transfer
-  CampaignTransactionConsumer.cs- Evaluates campaigns on transaction events
-
-Tiers:
-  Bronze: 0 - 999 pts
-  Silver: 1,000 - 4,999 pts
-  Gold  : 5,000+ pts
-
---- 6.6 NOTIFICATIONSERVICE - Port 5125 (HTTP) ---
-Directory: backend/NotificationService/
-Database  : MongoDB Atlas - WalletNotifications collection
-
-Controllers:
-  NotificationController.cs - GET notifications, PUT mark-as-read,
-                               POST request-money, POST internal/create
-
-Services:
-  NotificationService.cs      - Save/fetch notifications from MongoDB
-  EmailNotificationService.cs - Send HTML emails via Gmail SMTP
-
-Consumers:
-  NotificationConsumer.cs - Listens to notifications queue; routes to OTP email
-                            or standard notification + email
-
-Email types handled:
-  - OTP verification (forgot password)
-  - Transfer sent / Transfer received
-  - Top-up successful
-  - KYC approved / rejected
-  - Tier upgrade
-  - Support ticket reply
-  - Campaign reward applied
-  - Money request
-  - Welcome (on register)
-
-Fallback: If MongoDB not configured, uses InMemoryNotificationRepository
+Each backend service generally follows:
+  - Controllers
+  - Services
+  - Repositories
+  - DTOs
+  - Models
+  - Data
+  - Consumers, where RabbitMQ background work is needed
 
 ================================================================================
-7. RABBITMQ MESSAGE FLOW
+4. SERVICE MAP
 ================================================================================
+Gateway:
+  Path: backend/Gateway
+  Port: http://localhost:5000
+  Purpose: Ocelot gateway for frontend-facing API routes
 
-Publisher              Queue / Exchange              Consumer
----------------------  ----------------------------  --------------------------
-AuthService            notifications                 NotificationService
-  (OTP, welcome)
+AuthService:
+  Path: backend/AuthService
+  Ports: https://localhost:7264, http://localhost:5240
+  Purpose: registration, login, profile, KYC ownership, password reset,
+           transaction PIN, internal user lookup/update APIs
 
-WalletService          notifications                 NotificationService
-  (topup, transfer)
+WalletService:
+  Path: backend/WalletService
+  Port: http://localhost:5163
+  Purpose: wallet creation, balance, top-up, transfer, history, CSV/PDF export,
+           admin wallet adjustments and locks
 
-WalletService          wallet_transfer_exchange      RewardService
-  (transfer event)     (FANOUT exchange)             TransferEventConsumer
-                                                     -> awards 10 pts to sender
+AdminService:
+  Path: backend/AdminService
+  Port: http://localhost:5292
+  Purpose: admin login, KYC review, support ticket review/reply, KYC sync from
+           AuthService
 
-AdminService           kyc_decisions                 WalletService
-  (KYC decision)                                     KycApprovalConsumer
-                                                     -> auto-creates wallet
+RewardService:
+  Path: backend/RewardService
+  Port: http://localhost:5219
+  Purpose: reward balance, reward history, transfer points, campaign creation,
+           campaign rules, campaign redemption and cashback evaluation
 
-AdminService           notifications                 NotificationService
-  (KYC, ticket reply)
+NotificationService:
+  Path: backend/NotificationService
+  Port: http://localhost:5125
+  Purpose: in-app notifications, request-money notifications, read status,
+           email delivery, internal notification creation endpoint
 
-AuthService            kyc_submissions               AdminService
-  (KYC submit)                                       KycSubmissionConsumer
-                                                     -> stores for admin review
-
-================================================================================
-8. FRONTEND - ANGULAR 21
-================================================================================
-Location : frontend/trunqo-app/
-Entry    : src/main.ts -> src/app/app.config.ts -> src/app/app.routes.ts
-
-Design System (CSS variables in src/styles.css):
-  --bg          : #FFF8F0  (warm cream background)
-  --teal        : #C08552  (primary accent - warm brown/teal)
-  --secondary   : #8C5A3C  (darker accent)
-  --text-primary: #4B2E2B  (dark brown text)
-  Cards: white with soft shadows, 12-16px border radius
-
---- 8.1 ROUTE STRUCTURE ---
-
-PUBLIC ROUTES (no auth required):
-  /                  -> LandingComponent       (marketing landing page)
-  /features          -> PublicPagesComponent   (features page)
-  /pricing           -> PublicPagesComponent   (pricing page)
-  /security          -> PublicPagesComponent   (security page)
-  /about             -> PublicPagesComponent   (about us)
-  /careers           -> PublicPagesComponent   (careers)
-  /contact           -> PublicPagesComponent   (contact form)
-  /privacy           -> PublicPagesComponent   (privacy policy)
-  /terms             -> PublicPagesComponent   (terms of service)
-  /login             -> LoginComponent
-  /register          -> RegisterComponent
-  /forgot-password   -> ForgotPasswordComponent
-  /verify-otp        -> VerifyOtpComponent
-  /reset-password    -> ResetPasswordComponent
-
-AUTHENTICATED USER ROUTES (guarded by authGuard):
-  /dashboard         -> DashboardComponent     (balance + stats + recent txns)
-  /wallet/topup      -> TopupComponent         (add funds)
-  /wallet/transfer   -> TransferComponent      (send money, PIN-protected)
-  /wallet/history    -> HistoryComponent       (transaction list + CSV/PDF export)
-  /rewards           -> RewardsComponent       (points, tier, campaigns)
-  /notifications     -> NotificationsComponent (in-app notification list)
-  /profile           -> ProfileComponent       (profile + KYC submission)
-  /support           -> SupportComponent       (submit/view support tickets)
-  /analytics         -> AnalyticsComponent     (spending charts)
-  /set-pin           -> SetPinComponent        (set/change/remove transaction PIN)
-  /request-money     -> RequestMoneyComponent  (send money request notification)
-
-ADMIN ROUTES (guarded by adminGuard):
-  /admin/login       -> AdminLoginComponent    (admin login page)
-  /admin/kyc         -> KycListComponent       (KYC review + approve/reject)
-  /admin/tickets     -> TicketListComponent    (support ticket management)
-  /admin/users       -> UserListComponent      (user list + edit + delete + wallet)
-  /admin/campaigns   -> CampaignControlComponent (create campaigns + add rules)
-
---- 8.2 GUARDS ---
-authGuard  : checks localStorage for token with role === 'User'
-adminGuard : checks localStorage for token with role === 'Admin'
-
---- 8.3 CORE SERVICES ---
-api.ts            - Wraps HttpClient; auto-attaches JWT; base URL = http://localhost:5000
-auth.ts           - Login/register/logout; saves token+userId+role+name to localStorage
-token-refresh.ts  - Periodically calls /api/auth/refresh to keep session alive
-contacts.ts       - Stores recent transfer recipients in localStorage
+Frontend:
+  Path: frontend/trunqo-app
+  Dev Port: http://localhost:4200
+  API target: http://localhost:5000
 
 ================================================================================
-9. FRONTEND FOLDER STRUCTURE
+5. USER FEATURES
 ================================================================================
+Account:
+  - Register with full name, email, phone, and password
+  - Login with email/password and receive JWT
+  - View and update profile
+  - Forgot-password flow with OTP verification and reset token
+  - Set or remove a transaction PIN
 
-frontend/trunqo-app/
-  src/
-    index.html                          <- App shell HTML
-    main.ts                             <- Bootstrap entry point
-    styles.css                          <- Global CSS variables + design system
-    material-theme.scss                 <- Angular Material theme overrides
-    app/
-      app.ts                            <- Root AppComponent
-      app.routes.ts                     <- All route definitions
-      app.config.ts                     <- provideRouter, provideHttpClient, etc.
-      core/
-        guards/
-          auth-guard.ts                 <- authGuard + adminGuard functions
-        interceptors/                   <- (placeholder, not currently used)
-        layout/
-          dashboard-layout/             <- Sidebar + Topbar wrapper for auth pages
-        services/
-          api.ts                        <- HTTP wrapper service
-          auth.ts                       <- Auth state + API calls
-          contacts.ts                   <- Recent transfer contacts (localStorage)
-          token-refresh.ts              <- Auto JWT refresh
-      features/
-        landing/
-          landing.ts                    <- Public marketing landing page
-          landing.html                  <- Landing page template
-          landing.css                   <- Landing page styles
-        public-pages/
-          public-pages.ts               <- All 8 public info pages in one component
-                                           (features, pricing, security, about,
-                                            careers, contact, privacy, terms)
-        auth/
-          login/login.ts                <- User login form
-          register/register.ts          <- User registration form
-          forgot-password/              <- Step 1: enter email
-          verify-otp/                   <- Step 2: enter 6-digit OTP
-          reset-password/               <- Step 3: set new password
-        dashboard/
-          dashboard.ts                  <- Balance card, stats, recent transactions
-        wallet/
-          topup/topup.ts                <- Add funds form
-          transfer/transfer.ts          <- Send money (PIN modal, receiver lookup)
-          history/history.ts            <- Transaction list + CSV/PDF download
-        rewards/
-          rewards.ts                    <- Points, tier progress, campaigns, redemptions
-        notifications/
-          notifications.ts              <- In-app notification list + mark read
-        profile/
-          profile.ts                    <- User profile + KYC submission form
-        support/
-          support.ts                    <- Submit ticket + view my tickets
-        analytics/
-          analytics.ts                  <- Spending charts (Chart.js)
-        set-pin/
-          set-pin.ts                    <- 4-digit PIN numpad (set/change/remove)
-        request-money/
-          request-money.ts              <- Send money request notification
-        not-found/
-          not-found.ts                  <- 404 page
-        admin/
-          admin-login/admin-login.ts    <- Admin login form
-          kyc-list/                     <- KYC review list (html + css + ts)
-          ticket-list/ticket-list.ts    <- Support ticket management
-          user-list/user-list.ts        <- User management + wallet control
-          campaign-control/             <- Campaign + rule creation
-      shared/
-        components/                     <- Shared UI components (if any)
-  public/
-    favicon.ico
-    logo.png
-    assets/logo.png
-  angular.json                          <- Build config (budget: 12kB/20kB)
-  package.json                          <- npm scripts (npm start uses 4GB node heap)
-  .npmrc                                <- node-options=--max-old-space-size=4096
-  tsconfig.json
+KYC:
+  - Submit identity document details
+  - Track Pending, Approved, or Rejected state
+  - Wallet features are blocked until KYC is approved
+  - Approved KYC triggers wallet activation/creation
+
+Wallet:
+  - View balance and wallet status
+  - Top up wallet through a mock payment flow
+  - Transfer money to another registered user by email
+  - Verify transaction PIN before transfer
+  - View transaction history
+  - Export wallet history as CSV or PDF
+
+Rewards and campaigns:
+  - Earn points for successful transfers
+  - View reward balance and reward history
+  - Browse available campaigns
+  - Receive campaign rewards, including cashback when eligible
+
+Notifications:
+  - View in-app notifications
+  - Mark notifications as read
+  - Receive email notifications for key events
+  - Send request-money notifications
+
+Support and analytics:
+  - Submit support tickets
+  - View user ticket status and admin replies
+  - View analytics charts for wallet activity
 
 ================================================================================
-10. BACKEND FOLDER STRUCTURE
+6. ADMIN FEATURES
 ================================================================================
-
-backend/
-  Gateway/
-    Program.cs                          <- Ocelot setup + CORS
-    ocelot.json                         <- All route mappings (upstream -> downstream)
-    appsettings.json
-    Properties/launchSettings.json      <- Port 5000
-
-  AuthService/
-    Program.cs                          <- DI setup, JWT config, table auto-creation,
-                                           admin seeding
-    appsettings.json                    <- DB, JWT, RabbitMQ, InternalApiKey
-    Controllers/
-      AuthController.cs                 <- Public auth endpoints
-      UserController.cs                 <- Profile, KYC, internal lookups
-      PinController.cs                  <- PIN management + internal verify
-    Services/
-      AuthService.cs                    <- Business logic
-      TokenService.cs                   <- JWT generation
-      RabbitMqPublisher.cs              <- RabbitMQ publish
-    Repositories/
-      AuthRepository.cs                 <- EF Core queries
-      TransactionPinRepository.cs       <- PIN hash CRUD
-    Models/
-      User.cs
-      KycDocument.cs
-      PasswordResetSession.cs
-      TransactionPin.cs
-    Data/
-      AuthDbContext.cs                  <- EF Core DbContext
-    DTOs/
-      AuthDTOs.cs                       <- Request/response records
-    Consumers/
-      KycDecisionConsumer.cs            <- RabbitMQ background service
-    Middleware/
-      ExceptionHandlingMiddleware.cs    <- Global error handler
-    Common/Exceptions/
-      AppException.cs                   <- Custom exception types
-
-  WalletService/
-    Program.cs
-    appsettings.json
-    Controllers/
-      WalletController.cs
-    Services/
-      WalletService.cs                  <- All financial logic + PDF builder
-      RabbitMqPublisher.cs              <- Fanout exchange for wallet_transfer
-    Repositories/
-      WalletRepository.cs
-    Models/
-      Wallet.cs
-      WalletTransaction.cs
-    Data/
-      WalletDbContext.cs
-    DTOs/
-      WalletDTOs.cs
-    Consumers/
-      KycApprovalConsumer.cs
-    Middleware/
-      ExceptionHandlingMiddleware.cs
-
-  AdminService/
-    Program.cs                          <- KYC sync on startup
-    appsettings.json
-    Controllers/
-      AdminController.cs
-    Services/
-      AdminService.cs
-      RabbitMqPublisher.cs
-    Repositories/
-      AdminRepository.cs
-    Models/
-      KycReview.cs
-      SupportTicket.cs
-    Data/
-      AdminDbContext.cs
-    DTOs/
-      AdminDTOs.cs
-    Consumers/
-      KycSubmissionConsumer.cs
-    Middleware/
-      ExceptionHandlingMiddleware.cs
-
-  RewardService/
-    Program.cs
-    appsettings.json
-    Controllers/
-      RewardController.cs
-      CampaignController.cs
-    Services/
-      RewardService.cs
-      CampaignService.cs
-      RabbitMqPublisher.cs
-    Repositories/
-      RewardRepository.cs
-      CampaignRepository.cs
-    Models/
-      Reward.cs
-      RewardTransaction.cs
-      Campaign.cs
-      CampaignRule.cs
-      CampaignRedemption.cs
-    Data/
-      RewardDbContext.cs
-    DTOs/
-      RewardDTOs.cs
-      CampaignDTOs.cs
-    Consumers/
-      TransferEventConsumer.cs
-      CampaignTransactionConsumer.cs
-    Migrations/
-      202604130001_AddCampaignSystem.cs
-
-  NotificationService/
-    Program.cs
-    appsettings.json                    <- MongoDB, Gmail SMTP, JWT, InternalApiKey
-    Controllers/
-      NotificationController.cs
-    Services/
-      NotificationService.cs
-      EmailNotificationService.cs       <- HTML email templates for all event types
-    Repositories/
-      NotificationRepository.cs        <- MongoDB implementation
-      InMemoryNotificationRepository.cs <- Fallback if MongoDB not configured
-    Models/
-      Notification.cs
-    DTOs/
-      NotificationDTOs.cs
-    Consumers/
-      NotificationConsumer.cs           <- Main RabbitMQ listener
-    Middleware/
-      ExceptionHandlingMiddleware.cs
-
-  tests/
-    Trunqo.UnitTests/
-      UnitTest1.cs                      <- Unit test stubs
+Admins can:
+  - Log in through the admin route
+  - View pending KYC submissions
+  - Approve or reject KYC with admin notes
+  - View and reply to support tickets
+  - View and manage users
+  - Adjust or lock wallets through admin wallet APIs
+  - Create reward campaigns
+  - Add campaign rules
 
 ================================================================================
-11. DATABASE SCHEMA SUMMARY
+7. FRONTEND ROUTES
 ================================================================================
+Public:
+  - /
+  - /login
+  - /register
+  - /forgot-password
+  - /verify-otp
+  - /reset-password
+  - /features
+  - /pricing
+  - /security
+  - /about
+  - /careers
+  - /contact
+  - /privacy
+  - /terms
 
-WalletAuth (SQL Server):
-  Users              : Id, FullName, Email, PhoneNumber, PasswordHash, Role, Status, CreatedAt
-  KycDocuments       : Id, UserId(FK), DocumentType, DocumentNumber, Status, AdminNote,
-                       SubmittedAt, ReviewedAt
-  TransactionPins    : UserId(PK/FK), PinHash, CreatedAt, UpdatedAt
-  PasswordResetSessions: Id, UserId(FK), Purpose, OtpHash, ResetTokenHash,
-                         OtpExpiresAtUtc, ResetTokenExpiresAtUtc, VerifiedAtUtc,
-                         UsedAtUtc, Attempts, MaxAttempts, CreatedAtUtc
+Authenticated user routes:
+  - /dashboard
+  - /wallet/topup
+  - /wallet/transfer
+  - /wallet/history
+  - /rewards
+  - /notifications
+  - /profile
+  - /support
+  - /analytics
+  - /request-money
+  - /set-pin
 
-WalletWallet (SQL Server):
-  Wallets            : Id, UserId, Balance, Currency, IsLocked, CreatedAt, UpdatedAt
-  WalletTransactions : Id, WalletId(FK), ToWalletId, Type, Amount, BalanceAfter,
-                       Status, Reference, Note, CreatedAt
-
-WalletAdmin (SQL Server):
-  KycReviews         : Id, UserId, UserFullName, UserEmail, DocumentType, DocumentNumber,
-                       Status, AdminNote, ReviewedBy, SubmittedAt, ReviewedAt
-  SupportTickets     : Id, UserId, UserEmail, Subject, Message, Status, AdminReply,
-                       RespondedBy, CreatedAt, RespondedAt
-
-WalletReward (SQL Server):
-  Rewards            : Id, UserId, PointsBalance, TotalEarned, Tier, CreatedAt, UpdatedAt
-  RewardTransactions : Id, UserId, Points, Reason, Reference, CreatedAt
-  Campaigns          : Id, Name, Code, Description, IsActive, Priority, StartAtUtc, EndAtUtc
-  CampaignRules      : Id, CampaignId(FK), TransactionType, MinAmount, MaxAmount,
-                       RewardType, RewardPoints, CashbackAmount, CashbackPercent,
-                       MaxCashbackAmount, IsActive
-  CampaignRedemptions: Id, UserId, CampaignId, CampaignCode, CampaignName,
-                       TransactionRef, TransactionType, TransactionAmount,
-                       RewardType, RewardPoints, CashbackAmount, AppliedAtUtc
-
-MongoDB (WalletNotifications):
-  notifications collection: _id, UserId, Title, Message, Type, IsRead, CreatedAt
-
-================================================================================
-12. SECURITY MODEL
-================================================================================
-
-Concern              Implementation
--------------------  -----------------------------------------------------------
-Passwords            BCrypt hashed (never stored plain)
-Transaction PINs     BCrypt hashed
-OTPs                 SHA-256 hashed before DB storage, 10-min expiry
-Reset tokens         SHA-256 hashed before DB storage, 10-min expiry
-JWT                  HS256, 32-char secret, validated independently by each service
-Service-to-service   X-Internal-Api-Key header on all internal endpoints
-Admin routes         [Authorize(Roles = "Admin")] on controller actions
-HTTPS                AuthService runs HTTPS; others HTTP (dev environment)
+Admin routes:
+  - /admin/login
+  - /admin/kyc
+  - /admin/tickets
+  - /admin/users
+  - /admin/campaigns
 
 ================================================================================
-13. COMPLETE TRANSFER FLOW (end-to-end example)
+8. API AREAS
 ================================================================================
+Gateway base URL:
+  - http://localhost:5000
 
-User sends Rs.500 to another user:
+Auth:
+  - POST /api/auth/register
+  - POST /api/auth/login
+  - POST /api/auth/refresh
+  - POST /api/auth/forgot-password
+  - POST /api/auth/verify-reset-otp
+  - POST /api/auth/reset-password
+  - GET  /api/auth/profile
+  - PUT  /api/auth/profile
+  - POST /api/auth/kyc or /api/auth/kyc/submit
+  - GET  /api/auth/pin/status
+  - POST /api/auth/pin/set
+  - POST /api/auth/pin/remove
+  - GET  /api/auth/lookup-by-email
 
-1.  User enters receiver email
-    -> Angular calls GET /api/auth/lookup-by-email?email=...
-    -> Gateway -> AuthService -> returns receiver name (safe public endpoint)
+Wallet:
+  - GET  /api/wallet
+  - GET  /api/wallet/by-email
+  - POST /api/wallet/topup
+  - POST /api/wallet/transfer
+  - GET  /api/wallet/history
+  - GET  /api/wallet/history/export/csv
+  - GET  /api/wallet/history/export/pdf
+  - PUT  /api/wallet/admin/adjust
+  - PUT  /api/wallet/admin/lock
 
-2.  User enters amount + clicks Send
-    -> PIN modal appears (4-digit numpad)
+Admin:
+  - POST /api/admin/login
+  - GET  /api/admin/kyc/pending
+  - POST /api/admin/kyc/{id}/decide
+  - GET  /api/admin/tickets
+  - POST /api/admin/tickets/submit
+  - GET  /api/admin/tickets/my
+  - POST /api/admin/tickets/{id}/reply
 
-3.  User enters PIN -> Angular calls POST /api/wallet/transfer
-    Body: { receiverUserId, amount, note, transactionPin }
+Rewards:
+  - GET  /api/rewards
+  - GET  /api/rewards/history
+  - GET  /api/rewards/campaigns
+  - POST /api/rewards/campaigns
+  - GET  /api/rewards/campaigns/available
+  - GET  /api/rewards/campaigns/my-redemptions
+  - POST /api/rewards/campaigns/{campaignId}/rules
 
-4.  Gateway forwards to WalletService
+Notifications:
+  - GET  /api/notifications
+  - PUT  /api/notifications/{id}/read
+  - POST /api/notifications/request-money
 
-5.  WalletService calls AuthService internally:
-    GET /api/auth/internal/user/{senderId}
-    -> checks KYC status == "Active"
-
-6.  WalletService calls AuthService internally:
-    POST /api/auth/internal/user/{senderId}/pin/verify
-    -> verifies PIN BCrypt hash
-
-7.  WalletService loads both wallets, checks balances and lock status
-
-8.  WalletService executes DB transaction:
-    - Debit sender wallet
-    - Credit receiver wallet
-    - Insert 2 WalletTransaction records (transfer_out + transfer_in)
-
-9.  WalletService publishes to wallet_transfer_exchange (fanout)
-    -> RewardService TransferEventConsumer picks it up
-    -> Awards 10 points to sender
-
-10. WalletService publishes 2 events to notifications queue
-    -> NotificationService saves 2 in-app notifications to MongoDB
-    -> Sends 2 HTML emails (one to sender, one to receiver)
-
-11. WalletService returns 200 OK
-    -> Angular shows snackbar "Rs.500 sent!"
-    -> Navigates to /wallet/history
-
-================================================================================
-14. HOW TO RUN THE PROJECT
-================================================================================
-
-Prerequisites:
-  - SQL Server Express running: net start MSSQL
-  - RabbitMQ running on localhost:5672 (default guest/guest)
-  - MongoDB Atlas connection string in NotificationService/appsettings.json
-  - Node.js installed (for Angular frontend)
-
-Start all 6 backend services (each in its own terminal):
-  dotnet run --project backend/Gateway
-  dotnet run --project backend/AuthService
-  dotnet run --project backend/WalletService
-  dotnet run --project backend/AdminService
-  dotnet run --project backend/RewardService
-  dotnet run --project backend/NotificationService
-
-Start frontend (MUST use npm start, NOT ng serve directly):
-  cd frontend/trunqo-app
-  npm start
-  (This uses node --max-old-space-size=4096 to prevent OOM crash)
-
-Access:
-  App     : http://localhost:4200
-  Gateway : http://localhost:5000
-  Swagger : https://localhost:7264/swagger (AuthService example)
-
-Default admin login:
-  Email    : admin@trunqo.com
-  Password : Admin@123456
+Internal service APIs also exist for user lookups, KYC decisions, PIN checks,
+reward point insertion, campaign evaluation, and direct notification creation.
+They are protected with an internal API key where applicable.
 
 ================================================================================
-15. ROOT-LEVEL FILES
+9. RABBITMQ MESSAGE FLOW
 ================================================================================
+Important queues and exchanges:
+  - notifications
+  - kyc_submissions
+  - kyc_decisions
+  - wallet_topup
+  - wallet_transfer_exchange
+  - wallet_transfer_rewards
+  - wallet_transfer_campaigns
+  - campaign_cashback
 
-File                        Purpose
---------------------------  ---------------------------------------------------
-Trunqo.slnx                 Visual Studio solution file (links all 6 projects)
-ARCHITECTURE.md             High-level architecture notes
-README.md                   Basic project readme
-TRUNQO_PROJECT_OVERVIEW.txt This file
-.gitignore                  Ignores bin/, obj/, node_modules/, etc.
-.gitattributes              Line ending normalization
-_build/                     Compiled build artifacts (committed to repo)
-backend/tests/              Unit test project stubs (Trunqo.UnitTests)
+Typical flows:
+  - User registration publishes a welcome notification.
+  - KYC submission can be picked up by AdminService for review.
+  - Admin KYC decision updates AuthService and publishes KYC decision events.
+  - WalletService activates/creates wallets on approved KYC decisions.
+  - Transfers publish wallet transfer events for rewards and campaign evaluation.
+  - RewardService awards points and evaluates campaign rules.
+  - Cashback campaigns publish campaign_cashback events consumed by WalletService.
+  - NotificationService consumes notifications and sends in-app/email messages.
 
-================================================================================
-16. KNOWN NOTES & GOTCHAS
-================================================================================
-
-1. No EF Migrations used - tables are created via raw SQL on startup (Program.cs)
-   or were created manually. TransactionPins and PasswordResetSessions are
-   auto-created by AuthService/Program.cs on every startup.
-
-2. The frontend has TWO dist folders:
-   - dist/trunqo-app/  (current build)
-   - dist/wallet-app/  (old build from before rename)
-   Always use the trunqo-app build.
-
-3. npm start must be used instead of ng serve directly due to Node.js OOM.
-   The .npmrc file sets node-options=--max-old-space-size=4096.
-
-4. AuthService runs on HTTPS (port 7264). All other services run HTTP.
-   WalletService and AdminService use DangerousAcceptAnyServerCertificateValidator
-   when calling AuthService internally (dev-only workaround).
-
-5. The wallet_transfer event uses a RabbitMQ FANOUT EXCHANGE
-   (wallet_transfer_exchange) so both RewardService and any future consumers
-   can receive every transfer event independently.
-
-6. Campaign evaluation is triggered by CampaignTransactionConsumer listening
-   to transaction events. Campaigns are admin-created with rules defining
-   which transaction types earn points or cashback.
-
-7. The _build/ folder contains compiled DLL artifacts that were committed to
-   the repository. Ideally these should be in .gitignore.
+Several publishers include an HTTP fallback to NotificationService when RabbitMQ
+is unavailable.
 
 ================================================================================
-END OF OVERVIEW
+10. DATA STORAGE
 ================================================================================
+SQL Server-backed services:
+  - AuthService
+  - WalletService
+  - AdminService
+  - RewardService
+
+MongoDB-backed service:
+  - NotificationService
+
+Local appsettings files contain development configuration. Real credentials and
+secrets should be supplied through environment variables, user secrets, or a
+secure deployment secret store.
+
+Important configuration keys:
+  - ConnectionStrings__DefaultConnection
+  - Jwt__Key
+  - Jwt__Issuer
+  - Jwt__Audience
+  - RabbitMQ__Host
+  - RabbitMQ__Port
+  - RabbitMQ__User
+  - RabbitMQ__Pass
+  - MongoDB__ConnectionString
+  - MongoDB__DatabaseName
+  - InternalApiKey
+  - Email__Username
+  - Email__Password
+  - Email__FromEmail
+
+================================================================================
+11. SECURITY MODEL
+================================================================================
+Authentication:
+  - JWT bearer tokens are used across protected APIs.
+  - Admin routes use role-based authorization.
+  - Frontend guards protect authenticated and admin routes.
+
+Sensitive operations:
+  - Passwords are hashed with BCrypt.
+  - Transaction PINs are hashed before storage.
+  - Password reset OTPs/tokens are hashed.
+  - Money transfers require transaction PIN verification.
+  - Internal service endpoints require an internal API key.
+
+Operational note:
+  - Do not commit real production secrets in appsettings files.
+
+================================================================================
+12. LOCAL DEVELOPMENT
+================================================================================
+Backend:
+  - Open Trunqo.slnx in Visual Studio, or run individual projects under backend.
+  - Start Gateway plus the required backend services.
+  - Gateway listens on http://localhost:5000.
+
+Frontend:
+  - cd frontend/trunqo-app
+  - npm install
+  - npm start
+  - App listens on http://localhost:4200.
+
+Expected local dependencies:
+  - .NET SDK
+  - Node.js/npm
+  - SQL Server or compatible local/dev SQL connection
+  - RabbitMQ
+  - MongoDB access for notifications
+  - SMTP credentials if email delivery is required
+
+Default admin credentials:
+  - Email: admin@trunqo.com
+  - Password: Admin@123
+
+================================================================================
+13. VERIFICATION STATUS
+================================================================================
+Last verified on April 30, 2026:
+  - dotnet build Trunqo.slnx --ignore-failed-sources -p:NuGetAudit=false -p:UseAppHost=false
+  - dotnet backend/tests/Trunqo.UnitTests/bin/Debug/net8.0/Trunqo.UnitTests.dll
+  - npm.cmd run build
+  - npm.cmd test -- --watch=false
+
+Observed result:
+  - Full solution build succeeded.
+  - Backend console test harness passed 6 service tests.
+  - Angular production build succeeded.
+  - Angular unit tests passed 28 spec files / 29 tests.
+
+================================================================================
+14. KNOWN NOTES
+================================================================================
+  - TRUNQO_PROJECT_OVERVIEW.txt is a human-maintained project summary. The
+    authoritative source for routing is backend/Gateway/ocelot.json and
+    frontend/trunqo-app/src/app/app.routes.ts.
+  - The test project is a custom console-style test harness, not a standard
+    xUnit/NUnit/MSTest project.
+  - Some build commands may need normal filesystem permissions because .NET and
+    Angular write to obj, bin, dist, and temporary folders.
+  - Generated build output under bin, obj, dist, .angular, and node_modules is
+    not part of the application source.

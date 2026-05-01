@@ -128,21 +128,29 @@ public class NotificationService : INotificationService
             CreatedAt = DateTime.UtcNow
         });
 
-        // ✅ SEND EMAIL (FIXED SIGNATURE)
-        await _emailService.SendNotificationEmailAsync(
-            req.RecipientUserId,
-            null, // 🔥 email not passed here (OTP uses email directly)
-            title,
-            message,
-            "money_request",
-            req.Amount,
-            null,
-            note,
-            requesterName,
-            requesterEmail,
-            null,
-            DateTime.UtcNow
-        );
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _emailService.SendNotificationEmailAsync(
+                    req.RecipientUserId,
+                    null,
+                    title,
+                    message,
+                    "money_request",
+                    req.Amount,
+                    null,
+                    note,
+                    requesterName,
+                    requesterEmail,
+                    null,
+                    DateTime.UtcNow);
+            }
+            catch
+            {
+                // The in-app request is already saved; email delivery must not fail the user action.
+            }
+        });
 
         return new ApiResponse<object>(true, "Money request notification sent.", null);
     }

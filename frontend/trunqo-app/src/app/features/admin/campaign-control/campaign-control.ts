@@ -642,6 +642,18 @@ export class CampaignControlComponent implements OnInit {
       return;
     }
 
+    if (draft.rewardType === 'POINTS' && Number(draft.rewardPoints || 0) <= 0) {
+      this.snackBar.open('Points rules must award at least 1 point', 'Close', { duration: 3000 });
+      return;
+    }
+
+    if (draft.rewardType === 'CASHBACK'
+        && Number(draft.cashbackAmount || 0) <= 0
+        && Number(draft.cashbackPercent || 0) <= 0) {
+      this.snackBar.open('Cashback rules need a fixed amount or percentage', 'Close', { duration: 3000 });
+      return;
+    }
+
     campaign.addingRule = true;
     const request: AddRuleRequest = {
       transactionType: draft.transactionType,
@@ -729,7 +741,7 @@ export class CampaignControlComponent implements OnInit {
       minAmount: null,
       maxAmount: null,
       rewardType: 'POINTS',
-      rewardPoints: 0,
+      rewardPoints: 10,
       cashbackAmount: 0,
       cashbackPercent: 0,
       maxCashbackAmount: 0,
