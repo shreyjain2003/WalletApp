@@ -48,7 +48,7 @@ public class WalletService : IWalletService
         };
         http.DefaultRequestHeaders.Add(
             "X-Internal-Api-Key",
-            _config["InternalApiKey"] ?? "TrunqoInternalKey");
+            _config["InternalApiKey"] ?? "TrunqoInternalKey2024");
         return http;
     }
 

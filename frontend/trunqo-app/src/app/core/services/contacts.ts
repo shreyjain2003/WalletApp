@@ -40,7 +40,7 @@ export class ContactsService {
 
       localStorage.setItem(this.KEY, JSON.stringify(contacts));
     } catch {
-      console.error('Failed to save contact');
+      // silently ignore contact save failures
     }
   }
 
