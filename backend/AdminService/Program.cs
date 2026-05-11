@@ -101,7 +101,7 @@ using (var scope = app.Services.CreateScope())
         http.BaseAddress = new Uri(config["AuthService:BaseUrl"]!);
         http.DefaultRequestHeaders.Add(
             "X-Internal-Api-Key",
-            config["InternalApiKey"] ?? "TrunqoInternalKey");
+            config["InternalApiKey"] ?? "TrunqoInternalKey2024");
 
         var response = await http.GetAsync("/api/auth/internal/users");
         if (response.IsSuccessStatusCode)

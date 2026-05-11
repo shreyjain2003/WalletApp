@@ -133,7 +133,7 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
             using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
             http.DefaultRequestHeaders.Add(
                 "X-Internal-Api-Key",
-                _config["InternalApiKey"] ?? "TrunqoInternalKey");
+                _config["InternalApiKey"] ?? "TrunqoInternalKey2024");
 
             var response = await http.PostAsJsonAsync("/api/notifications/internal/create", message);
             if (!response.IsSuccessStatusCode)

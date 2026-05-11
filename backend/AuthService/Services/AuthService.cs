@@ -57,11 +57,13 @@ public class AuthService : IAuthService
         await _repo.AddUserAsync(user);
         await _repo.SaveChangesAsync();
 
-        await _mq.PublishAsync("notifications", new { 
-            userId = user.Id.ToString(), 
-            fullName = user.FullName, 
-            email = user.Email, 
-            type = "welcome" 
+        await _mq.PublishAsync("notifications", new
+        {
+            UserId = user.Id.ToString(),
+            Email = user.Email,
+            Title = "Welcome to Trunqo!",
+            Message = $"Hi {user.FullName}, your account has been created. Complete KYC to activate your wallet.",
+            Type = "welcome"
         });
 
         var token = _tokenService.GenerateToken(user);

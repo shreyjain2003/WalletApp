@@ -73,7 +73,7 @@ public class CampaignController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Evaluate([FromBody] EvaluateCampaignsRequest request)
     {
-        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey";
+        var expectedKey = _config["InternalApiKey"] ?? "TrunqoInternalKey2024";
         if (!Request.Headers.TryGetValue("X-Internal-Api-Key", out var providedKey)
             || providedKey != expectedKey)
             throw new UnauthorizedAppException("Unauthorized internal request.");
