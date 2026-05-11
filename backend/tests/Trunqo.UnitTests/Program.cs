@@ -97,12 +97,6 @@ static void AuthRegisterRejectsDuplicateEmail()
     AssertEqual(1, repo.Users.Count, "no new user should be created");
 }
 
-/*
-static void AuthUpdateRejectsDuplicatePhone()
-{
-// ... omitted ...
-}
-*/
 
 static void WalletGetOrCreateCreatesWallet()
 {

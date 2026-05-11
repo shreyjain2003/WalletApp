@@ -401,3 +401,856 @@ Observed result:
     Angular write to obj, bin, dist, and temporary folders.
   - Generated build output under bin, obj, dist, .angular, and node_modules is
     not part of the application source.
+
+================================================================================
+PART 2: TECHNICAL CONCEPTS DEEP DIVE (EASY LANGUAGE)
+================================================================================
+
+================================================================================
+T1. DEPENDENCY INJECTION (DI)
+================================================================================
+WHAT IT IS:
+  Imagine a restaurant. Instead of each chef going to the market themselves,
+  there is a central supply room. When a chef needs eggs, they just say
+  "I need eggs" and the supply room provides them. They don't care where
+  the eggs came from.
+
+  In code: instead of a class creating its own dependencies with "new",
+  it declares what it needs and the DI container provides them automatically.
+
+WHERE YOU USED IT (every Program.cs):
+  builder.Services.AddScoped<IAuthService, AuthService.Services.AuthService>();
+  builder.Services.AddScoped<IAuthRepository, AuthRepository>();
+  builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
+
+THREE LIFETIMES:
+  AddScoped    = new instance per HTTP request, disposed when request ends
+  AddSingleton = one instance for entire app lifetime (RabbitMQ connection)
+  AddTransient = new instance every time it is requested (not used here)
+
+WHY SINGLETON FOR RABBITMQ:
+  Opening a RabbitMQ connection is expensive. You want ONE connection shared
+  across all requests. Created when app starts, lives until app stops.
+
+HOW IT FLOWS:
+  HTTP Request arrives at WalletController
+    DI sees WalletController needs IWalletService
+    DI creates WalletService
+    WalletService needs IWalletRepository and IRabbitMqPublisher
+    DI creates WalletRepository (new for this request)
+    DI returns RabbitMqPublisher (the existing singleton)
+    WalletController gets fully constructed WalletService
+    Request processes
+    Request ends - WalletService and WalletRepository disposed
+
+================================================================================
+T2. ENTITY FRAMEWORK CORE (EF CORE)
+================================================================================
+WHAT IT IS:
+  EF Core is a translator between C# objects and SQL database tables.
+  Instead of writing raw SQL, you write C# LINQ queries and EF Core
+  generates the SQL for you automatically.
+
+  Instead of: SELECT * FROM Users WHERE Email = 'test@test.com'
+  You write:  db.Users.FirstOrDefaultAsync(u => u.Email == email)
+
+DBCONTEXT - THE CONNECTION TO THE DATABASE:
+  AuthDbContext has:
+    DbSet<User> Users              maps to Users table
+    DbSet<KycDocument> KycDocuments  maps to KycDocuments table
+    DbSet<TransactionPin> TransactionPins
+    DbSet<PasswordResetSession> PasswordResetSessions
+
+  OnModelCreating configures:
+    Primary keys, unique indexes, max lengths, foreign keys, relationships
+
+LINQ QUERIES USED:
+  Simple find:
+    db.Users.FirstOrDefaultAsync(u => u.Email == email)
+    SQL: SELECT TOP 1 * FROM Users WHERE Email = @email
+
+  With JOIN:
+    db.Users.Include(u => u.KycDocument).FirstOrDefaultAsync(u => u.Id == id)
+    SQL: SELECT u.*, k.* FROM Users u LEFT JOIN KycDocuments k ON k.UserId = u.Id
+
+  Filter + order:
+    db.KycReviews.Where(k => k.Status == "Pending").OrderBy(k => k.SubmittedAt)
+    SQL: SELECT * FROM KycReviews WHERE Status = 'Pending' ORDER BY SubmittedAt
+
+  Check existence:
+    db.Users.AnyAsync(u => u.Email == email)
+    SQL: SELECT CASE WHEN EXISTS(SELECT 1 FROM Users WHERE Email=@email) THEN 1 ELSE 0 END
+
+CHANGE TRACKING:
+  When EF loads an entity, it tracks changes. When SaveChanges() is called,
+  it generates UPDATE SQL automatically.
+    var user = await repo.GetUserByIdAsync(userId);  // EF tracks this
+    user.Status = "Active";                           // EF detects change
+    await repo.SaveChangesAsync();                    // generates UPDATE SQL
+
+================================================================================
+T3. REPOSITORY PATTERN
+================================================================================
+WHAT IT IS:
+  A middleman between business logic and the database. Your service says
+  "give me the user with this email" - it does not care if that comes from
+  SQL Server, MongoDB, or a text file.
+
+THE INTERFACE (the contract):
+  public interface IAuthRepository
+  {
+      Task<User?> GetUserByEmailAsync(string email, bool includeKyc = false);
+      Task<bool> EmailExistsAsync(string email, Guid? excludeUserId = null);
+      Task AddUserAsync(User user);
+      Task<int> SaveChangesAsync();
+  }
+
+THE IMPLEMENTATION (actual SQL):
+  public class AuthRepository : IAuthRepository
+  {
+      private readonly AuthDbContext _db;
+      public Task<User?> GetUserByEmailAsync(string email, bool includeKyc = false)
+      {
+          var query = _db.Users.AsQueryable();
+          if (includeKyc) query = query.Include(u => u.KycDocument);
+          return query.FirstOrDefaultAsync(u => u.Email == email);
+      }
+  }
+
+WHY Task<> EVERYWHERE:
+  Task<User?> means "this operation is asynchronous - it will complete in the
+  future." The await keyword pauses execution until the database responds,
+  but does not block the thread. This allows the server to handle thousands
+  of requests simultaneously.
+
+WHY THIS MATTERS FOR TESTING:
+  In unit tests, FakeAuthRepository replaces AuthRepository.
+  The service uses the interface - it does not know or care which
+  implementation it gets. No database needed for tests.
+
+================================================================================
+T4. JWT (JSON WEB TOKEN)
+================================================================================
+WHAT IT IS:
+  A JWT is like a hotel key card. When you check in (login), the hotel gives
+  you a key card. Every time you open a door (make an API call), you show the
+  key card. The door does not call the front desk to verify - it reads the
+  card itself.
+
+HOW YOUR TOKEN IS CREATED:
+  TokenService.GenerateToken(user) creates a token with:
+    Claims: userId, email, fullName, role ("User" or "Admin"), status
+    Issuer: "Trunqo"
+    Audience: "TrunqoUsers"
+    Expiry: 8 hours from creation
+    Signature: HMAC-SHA256 with 32-char secret key
+
+A JWT HAS 3 PARTS SEPARATED BY DOTS:
+  eyJhbGciOiJIUzI1NiJ9          Header (algorithm used)
+  .eyJ1c2VySWQiOiIxMjMifQ       Payload (your claims: userId, email, role)
+  .SflKxwRJSMeKKF2QT4fwpMeJf    Signature (proves it was not tampered)
+
+  If anyone changes the payload (e.g., changes role from User to Admin),
+  the signature will not match and the token is rejected.
+
+HOW EVERY SERVICE VALIDATES IT:
+  Each service has the same JWT validation config in Program.cs.
+  No service calls AuthService to validate - they all validate independently
+  using the shared secret key. This is stateless authentication.
+
+HOW CONTROLLERS READ THE USER:
+  private Guid CurrentUserId =>
+      Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+          ? id : throw new UnauthorizedAppException("Invalid token.");
+  No database call needed - the userId is IN the token itself.
+
+================================================================================
+T5. BCRYPT PASSWORD HASHING
+================================================================================
+WHAT IT IS:
+  BCrypt is a one-way scrambler. You put in "Password@123" and get out a
+  long hash string. You can never reverse it. To verify, you scramble the
+  input again and compare.
+
+REGISTRATION:
+  user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
+  "Password@123" becomes "..."
+  The "$" means cost factor 10 - takes ~100ms to compute.
+  This makes brute-force attacks very slow.
+
+LOGIN VERIFICATION:
+  BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash)
+  BCrypt re-hashes the input with the stored salt and compares.
+  Returns true only if they match.
+
+WHY BCRYPT OVER SHA-256 FOR PASSWORDS:
+  BCrypt has a built-in salt (random data) - same password gives different
+  hash each time. BCrypt is intentionally slow (cost factor) - makes
+  brute force impractical. SHA-256 is fast - bad for passwords.
+
+================================================================================
+T6. SHA-256 FOR OTPs AND RESET TOKENS
+================================================================================
+WHAT IT IS:
+  SHA-256 is a fast one-way hash. Used for OTPs because you want fast
+  verification but never want to store the raw OTP in the database.
+
+HOW IT WORKS:
+  When OTP is generated:
+    otp = "123456"  (raw OTP - sent to user email)
+    session.OtpHash = SHA256(otp)  (only hash stored in DB)
+    If DB is hacked, attacker gets a hash - useless without the original
+
+  When user submits OTP:
+    SHA256(submittedOtp) == session.OtpHash?
+    YES - verified, generate reset token
+    NO  - increment attempts counter, return error
+
+ATTEMPT LIMITING:
+  session.MaxAttempts = 5
+  session.Attempts++ on each failure
+  If Attempts >= MaxAttempts - session is dead, user must request new OTP
+
+SINGLE-USE ENFORCEMENT:
+  session.UsedAtUtc = DateTime.UtcNow  (set when reset token is used)
+  GetLatestVerifiedPasswordResetSessionAsync checks: UsedAtUtc IS NULL
+  Once used, the session is never returned again - prevents replay attacks
+
+================================================================================
+T7. CUSTOM EXCEPTIONS + GLOBAL MIDDLEWARE
+================================================================================
+WHAT IT IS:
+  Instead of writing try/catch in every controller method, you throw a
+  specific exception anywhere in your code and one central place catches
+  it and sends the right HTTP response.
+
+THE EXCEPTION HIERARCHY:
+  AppException (abstract base)
+    AppValidationException  - HTTP 400 - invalid input, business rule violation
+    NotFoundAppException    - HTTP 404 - resource does not exist
+    UnauthorizedAppException - HTTP 401 - wrong credentials, invalid token
+    ConflictAppException    - HTTP 409 - duplicate email, duplicate phone
+    ForbiddenAppException   - HTTP 403 - authenticated but not allowed
+    ExternalServiceAppException - HTTP 502 - external service call failed
+
+THE MIDDLEWARE CATCHES EVERYTHING:
+  try { await _next(context); }  // run the controller
+  catch (AppException ex)        // your custom exceptions
+  {
+      context.Response.StatusCode = ex.StatusCode;
+      await WriteErrorAsync(context, ex.StatusCode, ex.Message, ex.ErrorCode);
+  }
+  catch (Exception ex)           // anything unexpected
+  {
+      await WriteErrorAsync(context, 500, "Unexpected server error.", "internal_server_error");
+  }
+
+RESPONSE FORMAT (consistent across all 5 services):
+  {
+    "success": false,
+    "message": "User not found.",
+    "data": null,
+    "errorCode": "not_found"
+  }
+
+FLOW:
+  Controller throws: throw new NotFoundAppException("User not found.")
+  Exception bubbles up through the call stack
+  ExceptionHandlingMiddleware catches it
+  Reads StatusCode=404, Message="User not found.", ErrorCode="not_found"
+  Sends HTTP 404 response with JSON body
+  Angular reads err?.error?.message and shows snackbar
+
+================================================================================
+T8. RABBITMQ - MESSAGE BROKER
+================================================================================
+WHAT IT IS:
+  RabbitMQ is like a post office. Service A drops a letter in the mailbox.
+  Service B picks it up later. A does not wait for B to read the letter -
+  it just drops it and moves on.
+
+TWO TYPES OF QUEUES IN YOUR PROJECT:
+
+  Direct Queue - one publisher, one consumer:
+    _channel.QueueDeclare("notifications", durable: true, ...)
+    _channel.BasicPublish("", "notifications", props, body)
+    Message goes to exactly one consumer
+
+  Fanout Exchange - one publisher, multiple consumers:
+    _channel.ExchangeDeclare("wallet_transfer_exchange", type: "fanout")
+    _channel.BasicPublish("wallet_transfer_exchange", "", props, body)
+    Message goes to ALL queues bound to this exchange
+    RewardService gets it AND CampaignTransactionConsumer gets it
+
+DURABLE = TRUE:
+  Queue survives RabbitMQ restart. Messages are saved to disk.
+  Without this, all unprocessed messages are lost if RabbitMQ restarts.
+
+BASICACK VS BASICNACK:
+  BasicAck              - processed OK, remove from queue
+  BasicNack(requeue:true)  - failed, put back in queue for retry
+  BasicNack(requeue:false) - failed, discard (you fixed this bug - was dropping messages)
+
+HOW A CONSUMER WORKS:
+  1. Connect to RabbitMQ on startup
+  2. Declare the queue (creates it if it does not exist)
+  3. Register a callback method (delegate) that fires when message arrives
+  4. Process message in Task.Run (thread pool, does not block)
+  5. BasicAck on success, BasicNack on failure
+
+================================================================================
+T9. BACKGROUND SERVICES (IHostedService)
+================================================================================
+WHAT IT IS:
+  A background service runs continuously while your web server is running.
+  Like a background thread that starts when the app starts and stops when
+  the app stops.
+
+ALL YOUR CONSUMERS ARE BACKGROUND SERVICES:
+  KycApprovalConsumer       - WalletService - listens to kyc_decisions
+  CampaignCashbackConsumer  - WalletService - listens to campaign_cashback
+  KycDecisionConsumer       - AuthService   - listens to kyc_decisions
+  KycSubmissionConsumer     - AdminService  - listens to kyc_submissions
+  TransferEventConsumer     - RewardService - listens to wallet_transfer_exchange
+  CampaignTransactionConsumer - RewardService - listens to wallet_transfer_exchange
+  NotificationConsumer      - NotificationService - listens to notifications
+
+LIFECYCLE:
+  App starts  -> ExecuteAsync() called -> sets up RabbitMQ, starts listening
+  App running -> consumer processes messages in background
+  App stops   -> Dispose() called -> closes RabbitMQ connection
+
+================================================================================
+T10. DELEGATE - ExecuteInTransactionAsync
+================================================================================
+WHAT IT IS:
+  A delegate is a variable that holds a method. You pass a method as a
+  parameter to another method.
+
+  Func<Task> = a method that takes no parameters and returns a Task
+
+HOW IT WORKS:
+  WalletRepository.ExecuteInTransactionAsync(Func<Task> action):
+    1. Begin database transaction
+    2. Call action() - the method that was passed in
+    3. If action succeeds - commit transaction
+    4. If action throws - rollback transaction
+
+HOW WALLETSERVICE USES IT:
+  await _repo.ExecuteInTransactionAsync(async () =>
+  {
+      senderWallet.Balance -= req.Amount;   // debit sender
+      receiverWallet.Balance += req.Amount; // credit receiver
+      await _repo.AddTransactionsAsync(senderTx, receiverTx);
+      await _repo.SaveChangesAsync();
+  });
+  If anything inside throws - both wallets revert automatically
+
+WHY THIS IS POWERFUL:
+  Business logic (debit/credit) is in WalletService.
+  Transaction management (begin/commit/rollback) is in WalletRepository.
+  They are completely separated. WalletService does not know about transactions.
+
+================================================================================
+T11. EF CORE MIGRATIONS (RewardService only)
+================================================================================
+WHAT IT IS:
+  Migrations are version control for your database schema. EF Core tracks
+  changes to your model classes and generates the SQL automatically.
+
+YOUR MIGRATION FILE:
+  202604130001_AddCampaignSystem.cs
+  Up() method   - creates Campaigns, CampaignRules, CampaignRedemptions tables
+  Down() method - drops those tables (for rollback)
+
+AUTO-APPLIED ON STARTUP:
+  await db.Database.MigrateAsync();
+  Checks __EFMigrationsHistory table in the database
+  If migration not applied - runs the Up() method
+  If already applied - skips it
+  Safe to run on every startup
+
+================================================================================
+T12. MONGODB INTEGRATION
+================================================================================
+WHAT IT IS:
+  MongoDB stores data as JSON-like documents instead of rows and columns.
+  Perfect for notifications because each notification is a self-contained
+  document with no need for joins.
+
+HOW YOU USE IT:
+  NotificationRepository connects to MongoDB Atlas (cloud)
+  Collection name: "notifications"
+
+  INSERT:  _collection.InsertOneAsync(notification)
+  SELECT:  _collection.Find(n => n.UserId == userId)
+                       .SortByDescending(n => n.CreatedAt)
+                       .Limit(50)
+                       .ToListAsync()
+  UPDATE:  _collection.UpdateOneAsync(filter, update)
+           filter = Builders<Notification>.Filter.Eq(n => n.Id, id)
+           update = Builders<Notification>.Update.Set(n => n.IsRead, true)
+
+BSON ATTRIBUTES ON THE MODEL:
+  [BsonId] - marks the MongoDB _id field
+  [BsonRepresentation(BsonType.String)] - store Guid as string
+  [BsonElement("userId")] - field name in the MongoDB document
+
+FALLBACK:
+  If MongoDB connection string is a placeholder, InMemoryNotificationRepository
+  is used instead. Data is lost on restart but app still works.
+
+================================================================================
+T13. GMAIL SMTP EMAIL SENDING
+================================================================================
+WHAT IT IS:
+  SMTP is the protocol for sending emails. Your app connects to Gmail's
+  mail server and says "send this email on my behalf."
+
+HOW IT WORKS:
+  SmtpClient("smtp.gmail.com", 587) - Gmail SMTP server, port 587
+  EnableSsl = true                  - TLS encryption
+  Credentials = app password        - not your real Gmail password
+
+TWO EMAIL PATHS:
+  OTP email:
+    Detected by: message.Otp != null
+    No in-app notification created
+    Sends OTP HTML template with large monospace font, 10-min warning
+
+  Standard notification email:
+    Saves to MongoDB first
+    Then sends HTML email
+    If email fails - notification is still saved (try/catch around email)
+
+HTML EMAIL TEMPLATES:
+  All emails have: Trunqo gradient header, transaction amount highlighted,
+  details table (counterparty, balance after, reference), security footer
+  Different color per type: transfer_out=red, transfer_in=green, topup=green
+
+================================================================================
+T14. INTERNAL API KEY AUTHENTICATION
+================================================================================
+WHAT IT IS:
+  A shared secret between services. Like a password that only your services
+  know. Used for service-to-service calls that bypass JWT.
+
+HOW IT WORKS:
+  Calling service adds header: X-Internal-Api-Key: TrunqoInternalKey2024
+  Receiving service checks: Request.Headers["X-Internal-Api-Key"] == expectedKey
+  Internal endpoints are [AllowAnonymous] - they bypass JWT validation entirely
+
+WHY NOT JWT FOR INTERNAL CALLS:
+  Internal calls happen between services, not from users.
+  There is no "user" to authenticate - it is a service calling another service.
+  The API key proves the caller is a trusted internal service.
+
+================================================================================
+T15. RAW SQL ON STARTUP (Table Auto-Creation)
+================================================================================
+WHAT IT IS:
+  Some tables are created by running raw SQL on startup if they do not exist.
+  Used for TransactionPins and PasswordResetSessions in AuthService.
+
+HOW IT WORKS:
+  await db.Database.ExecuteSqlRawAsync(@"
+      IF NOT EXISTS (
+          SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_NAME = 'TransactionPins'
+      )
+      BEGIN
+          CREATE TABLE [TransactionPins] (...)
+      END
+  ");
+
+  IF NOT EXISTS - only creates the table if it does not already exist.
+  Safe to run on every startup. No error if table already exists.
+
+WHY NOT EF MIGRATIONS FOR THESE:
+  TransactionPins and PasswordResetSessions were added after the initial
+  database was created. Raw SQL was simpler than creating a migration.
+  RewardService uses proper EF migrations for its tables.
+
+
+================================================================================
+PART 3: FRONTEND TECHNICAL CONCEPTS
+================================================================================
+
+================================================================================
+F1. ANGULAR STANDALONE COMPONENTS
+================================================================================
+WHAT IT IS:
+  In older Angular, every component had to be declared in an NgModule.
+  Angular 21 uses standalone components - each component declares its own
+  imports directly. No NgModule needed.
+
+HOW YOU USED IT:
+  @Component({
+    selector: 'app-dashboard',
+    standalone: true,
+    imports: [CommonModule, RouterLink, MatIconModule, MatSnackBarModule],
+    template: '...',
+    styles: ['...']
+  })
+  export class DashboardComponent implements OnInit { }
+
+  imports array = what this component needs to use in its template
+  CommonModule = *ngIf, *ngFor, | date, | number pipes
+  RouterLink = routerLink directive for navigation
+  MatIconModule = <mat-icon> component
+
+================================================================================
+F2. LAZY LOADING ROUTES
+================================================================================
+WHAT IT IS:
+  Instead of loading all page code upfront, each page's code is downloaded
+  only when the user navigates to it. Makes initial load faster.
+
+HOW YOU USED IT:
+  { path: 'dashboard',
+    loadComponent: () => import('./features/dashboard/dashboard')
+                         .then(m => m.DashboardComponent) }
+
+  The import() is a dynamic import - it returns a Promise.
+  Angular downloads the chunk file only when user goes to /dashboard.
+  Each page becomes a separate JavaScript file (chunk).
+
+================================================================================
+F3. HTTP INTERCEPTOR (authInterceptor)
+================================================================================
+WHAT IT IS:
+  A function that runs on every HTTP request before it leaves the browser.
+  Like a checkpoint that adds the JWT to every request automatically.
+
+HOW IT WORKS:
+  export const authInterceptor: HttpInterceptorFn = (req, next) => {
+    const token = localStorage.getItem('token');
+
+    const authReq = token
+      ? req.clone({ setHeaders: { Authorization: 'Bearer ' + token } })
+      : req;
+
+    return next(authReq).pipe(
+      catchError((error: HttpErrorResponse) => {
+        if (error.status === 401) {
+          localStorage.clear();
+          router.navigate(['/login']);
+        }
+        return throwError(() => error);
+      })
+    );
+  };
+
+  req.clone() - creates a copy of the request with the new header
+  next(authReq) - passes the modified request to the next handler
+  catchError - intercepts 401 responses and redirects to login
+
+REGISTERED IN app.config.ts:
+  provideHttpClient(withInterceptors([authInterceptor]))
+
+================================================================================
+F4. ROUTE GUARDS (authGuard, adminGuard)
+================================================================================
+WHAT IT IS:
+  A function that runs before a route is activated. Returns true to allow
+  navigation, false to block it and redirect elsewhere.
+
+HOW YOU USED IT:
+  export const authGuard: CanActivateFn = () => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    if (token && role === 'User') return true;
+    router.navigate(['/login']);
+    return false;
+  };
+
+  export const adminGuard: CanActivateFn = () => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    if (token && role === 'Admin') return true;
+    router.navigate(['/admin/login']);
+    return false;
+  };
+
+APPLIED IN ROUTES:
+  { path: 'dashboard', canActivate: [authGuard], ... }
+  { path: 'admin/kyc', canActivate: [adminGuard], ... }
+
+================================================================================
+F5. RXJS OBSERVABLES AND OPERATORS
+================================================================================
+WHAT IT IS:
+  RxJS is a library for handling asynchronous data streams.
+  An Observable is like a stream of values over time.
+  Operators transform, filter, or combine streams.
+
+WHERE YOU USED IT:
+
+  subscribe() - listen to the stream:
+    this.api.get('/api/wallet').subscribe({
+      next: (res) => { this.wallet = res.data; },
+      error: (err) => { this.snackBar.open('Failed', 'Close'); }
+    });
+
+  forkJoin() - wait for multiple observables to complete:
+    forkJoin({
+      rewards: this.api.get('/api/rewards'),
+      history: this.api.get('/api/rewards/history'),
+      campaigns: this.api.get('/api/rewards/campaigns/available')
+    }).subscribe({
+      next: ({ rewards, history, campaigns }) => {
+        this.reward = rewards.data;
+        this.history = history.data;
+      }
+    });
+    All 3 API calls run in parallel. subscribe fires when ALL complete.
+
+  catchError() - handle errors in a stream:
+    this.api.get('/api/rewards').pipe(
+      catchError(() => of({ success: false, data: null }))
+    )
+    If the API call fails, return a default value instead of crashing.
+
+  tap() - side effects without changing the stream:
+    this.api.post('/api/auth/login', data).pipe(
+      tap((res: any) => {
+        if (res.success) this.saveSession(res.data);
+      })
+    );
+    tap runs saveSession but passes the response through unchanged.
+
+  BehaviorSubject - a stream with a current value:
+    private isLoggedInSubject = new BehaviorSubject<boolean>(this.hasToken());
+    isLoggedIn$ = this.isLoggedInSubject.asObservable();
+    Any component can subscribe to isLoggedIn$ and react when it changes.
+
+================================================================================
+F6. TOKEN REFRESH SERVICE
+================================================================================
+WHAT IT IS:
+  A service that automatically refreshes the JWT every 15 minutes so the
+  user never gets logged out unexpectedly.
+
+HOW IT WORKS:
+  startAutoRefresh():
+    setInterval(() => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      authService.refreshToken().subscribe({
+        next: (res) => {
+          if (res.success && res.data?.token) {
+            localStorage.setItem('token', res.data.token);
+          }
+        }
+      });
+    }, 15 * 60 * 1000);  // every 15 minutes
+
+  Uses Injector for lazy loading to break circular dependency:
+    AuthService needs TokenRefreshService
+    TokenRefreshService needs AuthService
+    Solution: TokenRefreshService uses injector.get(AuthService) lazily
+
+================================================================================
+F7. ANGULAR MATERIAL COMPONENTS
+================================================================================
+WHAT IT IS:
+  Angular Material is Google's UI component library. Provides pre-built
+  accessible components that follow Material Design.
+
+COMPONENTS YOU USED:
+  MatIconModule     - <mat-icon>notifications</mat-icon>
+  MatSnackBarModule - toast notifications at bottom of screen
+  MatMenuModule     - dropdown menu (user profile menu in topbar)
+  MatCardModule     - card containers (admin pages)
+  MatButtonModule   - styled buttons
+  MatInputModule    - styled input fields
+  MatIconModule     - Material icons (1000+ icons available)
+
+HOW SNACKBAR WORKS:
+  constructor(private snackBar: MatSnackBar) {}
+
+  this.snackBar.open('Transfer successful!', 'Close', { duration: 3000 });
+  Shows a toast at the bottom for 3 seconds
+  'Close' is the action button text
+
+================================================================================
+F8. CHART.JS IN ANALYTICS
+================================================================================
+WHAT IT IS:
+  Chart.js is a JavaScript charting library. You used it in the Analytics
+  page to show spending breakdowns.
+
+HOW YOU USED IT:
+  Chart.register(...registerables);  // register all chart types
+
+  Donut chart (transaction count breakdown):
+    new Chart(this.donutChartRef.nativeElement, {
+      type: 'doughnut',
+      data: {
+        labels: ['Top Ups', 'Money Sent', 'Money Received'],
+        datasets: [{ data: [topupCount, sentCount, receivedCount],
+                     backgroundColor: ['#C08552', '#EF4444', '#3B82F6'] }]
+      },
+      options: { cutout: '72%' }  // makes it a donut not a pie
+    });
+
+  Bar chart (amount by type):
+    new Chart(this.barChartRef.nativeElement, {
+      type: 'bar',
+      data: { labels: ['Top Ups', 'Sent', 'Received'],
+              datasets: [{ data: [topupTotal, sentTotal, receivedTotal] }] }
+    });
+
+  @ViewChild('donutChart') donutChartRef!: ElementRef;
+  ViewChild gets a reference to the <canvas> element in the template.
+  Charts are rendered AFTER data loads (not in ngAfterViewInit with timeout).
+
+================================================================================
+F9. CSS DESIGN SYSTEM (CSS CUSTOM PROPERTIES)
+================================================================================
+WHAT IT IS:
+  CSS custom properties (variables) defined once in styles.css and used
+  everywhere. Change one value and the entire app updates.
+
+YOUR DESIGN TOKENS:
+  :root {
+    --teal:         #C08552;   primary accent color
+    --secondary:    #8C5A3C;   darker accent
+    --bg:           #FFF8F0;   page background
+    --bg-card:      #FFFFFF;   card background
+    --text-primary: #4B2E2B;   main text color
+    --border:       #EAE0D5;   border color
+    --shadow-sm:    0 4px 12px rgba(75,46,43,0.04);
+    --shadow-teal:  0 4px 20px rgba(192,133,82,0.2);
+    --r-md:         12px;      border radius medium
+    --r-lg:         16px;      border radius large
+  }
+
+USED IN COMPONENTS:
+  .wa-card { background: var(--bg-card); border: 1px solid var(--border); }
+  .wa-btn-primary { background: var(--teal); color: white; }
+  .wa-btn-primary:hover { background: var(--secondary); }
+
+SHARED CLASSES IN styles.css:
+  .wa-card        - standard card with shadow and border
+  .wa-btn-primary - primary button (teal background)
+  .wa-btn-outline - outline button
+  .wa-input-wrap  - input field with icon
+  .wa-label       - uppercase label above inputs
+  .spinner-overlay - full-screen loading spinner
+  .fade-in        - CSS animation for page entry
+
+================================================================================
+F10. LOCALSTORAGE SESSION MANAGEMENT
+================================================================================
+WHAT IT IS:
+  localStorage is a browser storage that persists across page refreshes.
+  You use it to store the JWT and user info after login.
+
+WHAT YOU STORE:
+  localStorage.setItem('token', data.token)     JWT string
+  localStorage.setItem('userId', data.userId)   user's GUID
+  localStorage.setItem('role', data.role)       'User' or 'Admin'
+  localStorage.setItem('name', data.fullName)   display name
+
+ON LOGOUT:
+  localStorage.clear()  removes everything
+  router.navigate(['/login'])
+
+ON PAGE RELOAD:
+  App.ngOnInit() checks: localStorage.getItem('token')
+  If exists - starts token refresh timer (user was already logged in)
+  authGuard checks localStorage on every route navigation
+
+CONTACTS SERVICE (recent transfer recipients):
+  localStorage.setItem('recent_contacts', JSON.stringify(contacts))
+  Stores last 5 people you transferred to
+  Shows as quick-select on the Transfer page
+
+================================================================================
+F11. ANGULAR FORMS (FormsModule - Template-Driven)
+================================================================================
+WHAT IT IS:
+  Template-driven forms use [(ngModel)] for two-way data binding.
+  The form value in the template and the component property stay in sync.
+
+HOW YOU USED IT:
+  In template:
+    <input [(ngModel)]="email" placeholder="you@example.com"/>
+    <input [(ngModel)]="password" type="password"/>
+
+  In component:
+    email = '';
+    password = '';
+
+  [(ngModel)] = two-way binding
+    [ngModel] = component -> template (one way)
+    (ngModelChange) = template -> component (one way)
+    [(ngModel)] = both directions simultaneously
+
+  When user types in the input, email property updates automatically.
+  When email property changes in code, input shows the new value.
+
+================================================================================
+F12. CONTACTS SERVICE (localStorage)
+================================================================================
+WHAT IT IS:
+  Stores the last 5 people you transferred money to. Shows them as
+  quick-select avatars on the Transfer page.
+
+HOW IT WORKS:
+  saveContact(contact: Contact):
+    1. Load existing contacts from localStorage
+    2. Remove this contact if already in the list (avoid duplicates)
+    3. Add to the beginning of the list (most recent first)
+    4. Keep only last 5
+    5. Save back to localStorage
+
+  getContacts():
+    return JSON.parse(localStorage.getItem('recent_contacts') || '[]')
+
+  When user clicks a recent contact on Transfer page:
+    selectContact(contact) sets receiverEmail, receiverUserId, receiverName
+    Skips the email lookup step
+
+================================================================================
+PART 4: HOW FRONTEND AND BACKEND CONNECT
+================================================================================
+
+EVERY API CALL FLOW:
+  1. Component calls: this.api.get('/api/wallet')
+  2. ApiService creates: GET http://localhost:5000/api/wallet
+  3. authInterceptor adds: Authorization: Bearer eyJhbGci...
+  4. Request goes to Gateway (port 5000)
+  5. Gateway reads ocelot.json, finds matching route
+  6. Gateway forwards to: http://localhost:5163/api/wallet
+  7. WalletService validates JWT (reads claims, gets userId)
+  8. WalletService queries database
+  9. Returns JSON response
+  10. Gateway forwards response back to browser
+  11. authInterceptor checks: is it 401? No - pass through
+  12. Component's subscribe next() handler receives the data
+  13. Component updates its properties
+  14. Angular detects property changes and updates the DOM
+
+ERROR FLOW:
+  1. WalletService throws: throw new AppValidationException("Wallet is locked.")
+  2. ExceptionHandlingMiddleware catches it
+  3. Sends HTTP 400: { success: false, message: "Wallet is locked.", errorCode: "validation_error" }
+  4. authInterceptor sees 400 (not 401) - passes through
+  5. Component's subscribe error() handler fires
+  6. err?.error?.message = "Wallet is locked."
+  7. snackBar.open("Wallet is locked.", 'Close', { duration: 3000 })
+
+REAL-TIME NOTIFICATION BADGE:
+  DashboardLayoutComponent.ngOnInit():
+    this.api.get('/api/notifications').subscribe({
+      next: (res) => {
+        this.hasUnreadNotifications = res.data.some((n: any) => !n.isRead);
+      }
+    });
+  If any notification has isRead=false, the red dot appears on the bell icon.
+
+================================================================================
+END OF TECHNICAL CONCEPTS
+================================================================================
