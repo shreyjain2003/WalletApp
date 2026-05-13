@@ -1,3 +1,25 @@
+/**
+ * rewards.ts — RewardsComponent
+ *
+ * Rewards centre — shows points balance, tier progress, active campaigns,
+ * campaign redemption history, and points transaction history.
+ * Route: /rewards (protected by authGuard)
+ *
+ * All 4 API calls are fired in parallel using RxJS forkJoin so the page
+ * loads in one round-trip. Each call has a catchError fallback so a failure
+ * in one section does not break the others.
+ *
+ * API calls:
+ *  GET /api/rewards                        — points balance, tier, totalEarned
+ *  GET /api/rewards/history                — points transaction history (last 50)
+ *  GET /api/rewards/campaigns/my-redemptions — campaigns applied to this user
+ *  GET /api/rewards/campaigns/available    — currently active campaigns to browse
+ *
+ * Tier thresholds (matches backend RewardService):
+ *  Bronze: 0–999 pts
+ *  Silver: 1,000–4,999 pts
+ *  Gold:   5,000+ pts
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -463,20 +485,30 @@ interface AvailableCampaign {
   `]
 })
 export class RewardsComponent implements OnInit {
+  /** Current reward balance, tier, and lifetime total from GET /api/rewards */
   reward: RewardSummary | null = null;
+  /** Points transaction history from GET /api/rewards/history */
   history: RewardHistoryItem[] = [];
+  /** Campaign redemptions applied to this user's transactions */
   campaignRedemptions: CampaignRedemption[] = [];
+  /** Currently active campaigns available for the user to browse */
   availableCampaigns: AvailableCampaign[] = [];
+  /** Controls the full-page spinner */
   loading = true;
 
   constructor(private api: ApiService, private snackBar: MatSnackBar) {}
 
+  /**
+   * Fires all 4 API calls in parallel using forkJoin.
+   * Each call has a catchError fallback returning an empty/null response
+   * so a single failing endpoint does not prevent the rest from rendering.
+   */
   ngOnInit(): void {
     forkJoin({
-      rewards:      this.api.get<any>('/api/rewards').pipe(catchError(() => of({ success: false, data: null }))),
-      history:      this.api.get<any>('/api/rewards/history').pipe(catchError(() => of({ success: false, data: [] }))),
-      redemptions:  this.api.get<any>('/api/rewards/campaigns/my-redemptions').pipe(catchError(() => of({ success: false, data: [] }))),
-      campaigns:    this.api.get<any>('/api/rewards/campaigns/available').pipe(catchError(() => of({ success: false, data: [] })))
+      rewards:     this.api.get<any>('/api/rewards').pipe(catchError(() => of({ success: false, data: null }))),
+      history:     this.api.get<any>('/api/rewards/history').pipe(catchError(() => of({ success: false, data: [] }))),
+      redemptions: this.api.get<any>('/api/rewards/campaigns/my-redemptions').pipe(catchError(() => of({ success: false, data: [] }))),
+      campaigns:   this.api.get<any>('/api/rewards/campaigns/available').pipe(catchError(() => of({ success: false, data: [] })))
     }).subscribe({
       next: ({ rewards, history, redemptions, campaigns }) => {
         if (rewards.success)     this.reward = rewards.data;
@@ -492,12 +524,21 @@ export class RewardsComponent implements OnInit {
     });
   }
 
+  // ── Computed properties ───────────────────────────────────────────────────
+
+  /** Returns the emoji for the current tier (🥉 Bronze / 🥈 Silver / 🥇 Gold) */
   get tierEmoji(): string {
     if (this.reward?.tier === 'Gold')   return '🥇';
     if (this.reward?.tier === 'Silver') return '🥈';
     return '🥉';
   }
 
+  /**
+   * Returns the progress bar fill percentage (0–100) based on lifetime points.
+   * Bronze → Silver: 0–1000 pts maps to 0–100%
+   * Silver → Gold:   1000–5000 pts maps to 0–100%
+   * Gold:             always 100%
+   */
   get progress(): number {
     const t = this.reward?.totalEarned ?? 0;
     if (t >= 5000) return 100;
@@ -505,6 +546,7 @@ export class RewardsComponent implements OnInit {
     return (t / 1000) * 100;
   }
 
+  /** Returns a human-readable label showing how many points until the next tier */
   get progressLabel(): string {
     const t = this.reward?.totalEarned ?? 0;
     if (t >= 5000) return '🎉 Gold tier reached!';
@@ -512,25 +554,27 @@ export class RewardsComponent implements OnInit {
     return `${1000 - t} pts to Silver`;
   }
 
+  // ── Formatting helpers ────────────────────────────────────────────────────
+
+  /** Maps a transaction type string to a human-readable label */
   formatTransactionType(value: string): string {
     const map: Record<string, string> = {
-      topup: 'Top Up',
-      transfer_in: 'Transfer In',
-      transfer_out: 'Transfer Out'
+      topup: 'Top Up', transfer_in: 'Transfer In', transfer_out: 'Transfer Out'
     };
     return map[value] ?? value;
   }
 
-  formatTxnType(value: string): string {
-    return this.formatTransactionType(value);
-  }
+  /** Alias used in the campaign rules template */
+  formatTxnType(value: string): string { return this.formatTransactionType(value); }
 
+  /** Formats a campaign redemption reward as a human-readable string */
   formatCampaignReward(r: CampaignRedemption): string {
     if (r.rewardType === 'POINTS')   return `+${r.rewardPoints} pts`;
     if (r.rewardType === 'CASHBACK') return `₹${r.cashbackAmount.toFixed(2)} cashback`;
     return 'Offer applied';
   }
 
+  /** Formats a campaign rule reward as a short label for the rule chip */
   formatRuleLabel(r: CampaignRule): string {
     if (r.rewardType === 'POINTS')   return `+${r.rewardPoints} pts`;
     if (r.rewardType === 'CASHBACK') {
@@ -540,16 +584,19 @@ export class RewardsComponent implements OnInit {
     return 'Special offer';
   }
 
+  /** Returns the Material icon name for a reward type */
   ruleIcon(rewardType: string): string {
     if (rewardType === 'POINTS')   return 'stars';
     if (rewardType === 'CASHBACK') return 'currency_rupee';
     return 'card_giftcard';
   }
 
+  /** Returns true if the campaign has any transfer rules (shows "Transfer Now" CTA) */
   hasTransferRule(c: AvailableCampaign): boolean {
     return c.rules.some(r => r.transactionType === 'transfer_out' || r.transactionType === 'transfer_in');
   }
 
+  /** Returns true if the campaign has any topup rules (shows "Top Up Now" CTA) */
   hasTopupRule(c: AvailableCampaign): boolean {
     return c.rules.some(r => r.transactionType === 'topup');
   }

@@ -1,3 +1,19 @@
+/**
+ * topup.ts — TopupComponent
+ *
+ * Wallet top-up page — adds funds to the user's wallet.
+ * Route: /wallet/topup (protected by authGuard)
+ *
+ * Responsibilities:
+ *  - Checks KYC status on init; shows a blocked banner if not Active
+ *  - Accepts an amount (typed or quick-select: ₹500/1000/2000/5000)
+ *  - Optional note field for personal reference
+ *  - Calls POST /api/wallet/topup on submit
+ *  - On success, navigates to /wallet/history so the user sees the new transaction
+ *
+ * Note: This is a mock payment — no real payment gateway is integrated.
+ * The backend simply credits the amount to the wallet balance.
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -108,20 +124,67 @@ import { ApiService } from '../../../core/services/api';
   `]
 })
 export class TopupComponent implements OnInit {
-  amount = 0; note = ''; loading = true; kycBlocked = false; kycStatus = '';
-  constructor(private api: ApiService, private router: Router, private snackBar: MatSnackBar) {}
+  /** Amount to top up — bound to the large number input and quick-select chips */
+  amount = 0;
+  /** Optional note stored with the transaction record */
+  note = '';
+  /** Controls the full-page spinner; also disables the submit button */
+  loading = true;
+  /** When true, hides the form and shows the KYC blocked banner */
+  kycBlocked = false;
+  /** 'Pending' or 'Rejected' — used to show the correct message in the banner */
+  kycStatus = '';
+
+  constructor(
+    private api: ApiService,
+    private router: Router,
+    private snackBar: MatSnackBar
+  ) {}
+
+  /**
+   * Checks the user's KYC status before showing the top-up form.
+   * If status is not 'Active', the form is hidden and a banner is shown
+   * directing the user to complete or resubmit KYC.
+   */
   ngOnInit(): void {
     this.api.get<any>('/api/auth/profile').subscribe({
-      next: (res) => { if (res.success) { this.kycStatus = res.data.status; this.kycBlocked = res.data.status !== 'Active'; } this.loading = false; },
+      next: (res) => {
+        if (res.success) {
+          this.kycStatus = res.data.status;
+          // Block wallet features until KYC is approved
+          this.kycBlocked = res.data.status !== 'Active';
+        }
+        this.loading = false;
+      },
       error: () => this.loading = false
     });
   }
+
+  /**
+   * Submits the top-up request to the backend.
+   * The backend validates KYC status again server-side (defence in depth).
+   * On success, navigates to history so the user sees the new transaction immediately.
+   */
   topUp(): void {
-    if (!this.amount || this.amount <= 0) { this.snackBar.open('Enter a valid amount', 'Close', { duration: 3000 }); return; }
+    if (!this.amount || this.amount <= 0) {
+      this.snackBar.open('Enter a valid amount', 'Close', { duration: 3000 });
+      return;
+    }
     this.loading = true;
     this.api.post<any>('/api/wallet/topup', { amount: this.amount, note: this.note }).subscribe({
-      next: (res) => { if (res.success) { this.snackBar.open(`₹${this.amount} added successfully!`, 'Close', { duration: 3000 }); this.router.navigate(['/wallet/history']); } else { this.snackBar.open(res.message, 'Close', { duration: 3000 }); } this.loading = false; },
-      error: (err: any) => { this.snackBar.open(err?.error?.message ?? 'Top up failed', 'Close', { duration: 3000 }); this.loading = false; }
+      next: (res) => {
+        if (res.success) {
+          this.snackBar.open(`₹${this.amount} added successfully!`, 'Close', { duration: 3000 });
+          this.router.navigate(['/wallet/history']);
+        } else {
+          this.snackBar.open(res.message, 'Close', { duration: 3000 });
+        }
+        this.loading = false;
+      },
+      error: (err: any) => {
+        this.snackBar.open(err?.error?.message ?? 'Top up failed', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
 }

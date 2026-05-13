@@ -1,3 +1,24 @@
+/**
+ * reset-password.ts — ResetPasswordComponent
+ *
+ * Step 3 (final) of the password reset flow.
+ * Route: /reset-password?email=user@example.com&token=<resetToken>
+ *
+ * Responsibilities:
+ *  - Reads email and resetToken from query parameters (set by VerifyOtpComponent)
+ *  - If either is missing, shows an "Invalid Link" fallback view
+ *  - Accepts newPassword + confirmPassword
+ *  - Calls AuthService.resetPassword() → POST /api/auth/reset-password
+ *  - On success, shows a snackbar and redirects to /login after 1.5s
+ *  - Shows inline error messages for mismatched passwords or expired tokens
+ *
+ * Security: the resetToken is a one-time UUID that expires in 10 minutes.
+ * The backend verifies its SHA-256 hash and marks it as used after success,
+ * preventing replay attacks.
+ *
+ * Flow: /forgot-password → /verify-otp → /reset-password
+ */
+
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -60,18 +81,71 @@ import { AuthService } from '../../../core/services/auth';
 })
 
 export class ResetPasswordComponent implements OnInit {
-  email = ''; token = ''; newPassword = ''; confirmPassword = '';
-  loading = false; errMsg = ''; showNew = false; showConf = false; nf = false; cf = false;
-  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute, private snackBar: MatSnackBar) {}
-  ngOnInit(): void { this.route.queryParams.subscribe(p => { this.email = p['email'] || ''; this.token = p['token'] || ''; }); }
+  /** Email read from query param — passed to the API to identify the user */
+  email = '';
+  /** One-time reset token from query param — proves OTP was verified */
+  token = '';
+  /** New password entered by the user */
+  newPassword = '';
+  /** Confirmation field — must match newPassword before submitting */
+  confirmPassword = '';
+  /** Controls the loading spinner */
+  loading = false;
+  /** Inline error message shown below the confirm field */
+  errMsg = '';
+  /** Toggle visibility for new password field */
+  showNew = false;
+  /** Toggle visibility for confirm password field */
+  showConf = false;
+  /** Focus state flags for input wrapper styling */
+  nf = false; cf = false;
+
+  constructor(
+    private auth: AuthService,
+    private router: Router,
+    private route: ActivatedRoute,
+    private snackBar: MatSnackBar
+  ) {}
+
+  /**
+   * Reads email and token from the URL query parameters.
+   * These were set by VerifyOtpComponent after successful OTP verification.
+   * If either is missing, the template shows the #invalid fallback view.
+   */
+  ngOnInit(): void {
+    this.route.queryParams.subscribe(p => {
+      this.email = p['email'] || '';
+      this.token = p['token'] || '';
+    });
+  }
+
+  /**
+   * Submits the new password.
+   * Client-side checks: both fields filled, passwords match.
+   * On success, redirects to /login after a 1.5s delay so the user
+   * can read the success snackbar before being redirected.
+   */
   reset(): void {
     this.errMsg = '';
     if (!this.newPassword || !this.confirmPassword) { this.errMsg = 'Please fill all fields'; return; }
     if (this.newPassword !== this.confirmPassword) { this.errMsg = 'Passwords do not match'; return; }
     this.loading = true;
-    this.auth.resetPassword({ email: this.email, resetToken: this.token, newPassword: this.newPassword, confirmPassword: this.confirmPassword }).subscribe({
-      next: () => { this.snackBar.open('Password reset successful!', 'Close', { duration: 3000 }); setTimeout(() => this.router.navigate(['/login']), 1500); },
-      error: (err: any) => { this.errMsg = err?.error?.message || 'Invalid or expired token'; this.loading = false; }
+    this.auth.resetPassword({
+      email: this.email,
+      resetToken: this.token,
+      newPassword: this.newPassword,
+      confirmPassword: this.confirmPassword
+    }).subscribe({
+      next: () => {
+        this.snackBar.open('Password reset successful!', 'Close', { duration: 3000 });
+        // Brief delay so the user sees the success message before being redirected
+        setTimeout(() => this.router.navigate(['/login']), 1500);
+      },
+      error: (err: any) => {
+        // Backend returns a specific message if the token is expired or already used
+        this.errMsg = err?.error?.message || 'Invalid or expired token';
+        this.loading = false;
+      }
     });
   }
 }

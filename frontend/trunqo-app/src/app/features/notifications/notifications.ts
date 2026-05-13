@@ -1,3 +1,20 @@
+/**
+ * notifications.ts — NotificationsComponent
+ *
+ * In-app notification centre showing all events for the current user.
+ * Route: /notifications (protected by authGuard)
+ *
+ * Features:
+ *  - Loads all notifications from GET /api/notifications (MongoDB, newest first)
+ *  - Shows an unread count badge in the page header
+ *  - Unread notifications have a teal left border and highlighted background
+ *  - "Mark as read" button on each unread row calls PUT /api/notifications/{id}/read
+ *    and decrements the unread counter without a full page reload
+ *  - Each notification type has a distinct icon and colour
+ *
+ * Notification types: topup, transfer_in, transfer_out, kyc_decision,
+ *                     tier_upgrade, ticket_reply, campaign_applied
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -79,21 +96,65 @@ import { ApiService } from '../../core/services/api';
   `]
 })
 export class NotificationsComponent implements OnInit {
-  notifications: any[] = []; loading = true; unreadCount = 0;
+  /** All notifications for the current user, newest first */
+  notifications: any[] = [];
+  /** Controls the full-page spinner */
+  loading = true;
+  /** Count of notifications where isRead === false — shown in the badge */
+  unreadCount = 0;
+
   constructor(private api: ApiService, private snackBar: MatSnackBar) {}
+
+  /** Loads all notifications and computes the unread count on init */
   ngOnInit(): void {
     this.api.get<any>('/api/notifications').subscribe({
-      next: (res) => { if (res.success) { this.notifications = res.data; this.unreadCount = res.data.filter((n: any) => !n.isRead).length; } this.loading = false; },
-      error: () => { this.snackBar.open('Failed to load notifications', 'Close', { duration: 3000 }); this.loading = false; }
+      next: (res) => {
+        if (res.success) {
+          this.notifications = res.data;
+          // Count unread notifications for the badge
+          this.unreadCount = res.data.filter((n: any) => !n.isRead).length;
+        }
+        this.loading = false;
+      },
+      error: () => {
+        this.snackBar.open('Failed to load notifications', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
+
+  /**
+   * Marks a single notification as read.
+   * Updates the local array in-place (no full reload) and decrements the badge counter.
+   * Calls PUT /api/notifications/{id}/read
+   */
   markRead(id: string): void {
     this.api.put<any>(`/api/notifications/${id}/read`, {}).subscribe({
-      next: (res) => { if (res.success) { const n = this.notifications.find(n => n.id === id); if (n) { n.isRead = true; this.unreadCount = Math.max(0, this.unreadCount - 1); } } }
+      next: (res) => {
+        if (res.success) {
+          // Update the local notification object so the UI reflects the change immediately
+          const n = this.notifications.find(n => n.id === id);
+          if (n) {
+            n.isRead = true;
+            // Clamp to 0 to prevent negative counts
+            this.unreadCount = Math.max(0, this.unreadCount - 1);
+          }
+        }
+      }
     });
   }
+
+  /** Maps a notification type to a Material icon name for the icon column */
   getIcon(type: string): string {
-    const m: Record<string,string> = { topup: 'add_circle', transfer_in: 'arrow_downward', transfer_out: 'arrow_upward', kyc_decision: 'verified_user', tier_upgrade: 'workspace_premium', ticket_reply: 'support_agent', campaign_applied: 'local_offer' };
+    const m: Record<string, string> = {
+      topup: 'add_circle',
+      transfer_in: 'arrow_downward',
+      transfer_out: 'arrow_upward',
+      kyc_decision: 'verified_user',
+      tier_upgrade: 'workspace_premium',
+      ticket_reply: 'support_agent',
+      campaign_applied: 'local_offer'
+    };
     return m[type] ?? 'notifications';
   }
 }

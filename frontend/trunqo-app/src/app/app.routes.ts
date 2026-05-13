@@ -1,3 +1,39 @@
+/**
+ * app.routes.ts — Application Route Configuration
+ *
+ * Defines all routes for the Trunqo Angular application using lazy loading.
+ * Every route uses loadComponent() so each page is only downloaded when
+ * the user navigates to it — this keeps the initial bundle small.
+ *
+ * Route groups:
+ *
+ * Public (no guard):
+ *   /                  — Landing page
+ *   /login             — User login
+ *   /register          — New user registration
+ *   /forgot-password   — Step 1 of password reset
+ *   /verify-otp        — Step 2 of password reset
+ *   /reset-password    — Step 3 of password reset
+ *   /admin/login       — Admin login
+ *   /features, /pricing, /security, /about, /careers,
+ *   /contact, /privacy, /terms  — Public info pages
+ *
+ * Authenticated user routes (wrapped in DashboardLayoutComponent, guarded by authGuard):
+ *   /dashboard, /wallet/topup, /wallet/transfer, /wallet/history,
+ *   /rewards, /notifications, /profile, /support, /analytics,
+ *   /request-money, /set-pin
+ *
+ * Admin routes (guarded by adminGuard):
+ *   /admin/kyc, /admin/tickets, /admin/users, /admin/campaigns
+ *
+ * Fallback:
+ *   **  → redirects to /not-found
+ *   /not-found → NotFoundComponent (custom 404 page)
+ *
+ * Guards:
+ *   authGuard  — requires token + role = 'User'
+ *   adminGuard — requires token + role = 'Admin'
+ */
 import { Routes } from '@angular/router';
 import { authGuard, adminGuard } from './core/guards/auth-guard';
 

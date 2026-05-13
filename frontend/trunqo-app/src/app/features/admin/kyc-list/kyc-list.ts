@@ -1,3 +1,20 @@
+/**
+ * kyc-list.ts — KycListComponent
+ *
+ * Admin KYC review page — lists all pending KYC submissions and allows
+ * the admin to approve or reject each one.
+ * Route: /admin/kyc (protected by adminGuard)
+ *
+ * On decide():
+ *  1. Calls POST /api/admin/kyc/{id}/decide with decision + optional adminNote
+ *  2. AdminService updates the KycReview record in its own DB
+ *  3. AdminService calls AuthService to update User.Status
+ *  4. AdminService publishes to kyc_decisions queue:
+ *     - WalletService creates the wallet (if Approved)
+ *     - AuthService updates User.Status (redundant but safe)
+ *  5. AdminService publishes a notification event so the user gets an email
+ *  6. The approved/rejected card is removed from the list immediately
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -122,21 +139,29 @@ import { ApiService } from '../../../core/services/api';
   `]
 })
 export class KycListComponent implements OnInit {
+  /** KYC review records loaded from GET /api/admin/kyc/pending.
+   *  Each item is augmented with adminNoteInput (bound to the note field)
+   *  and loading (disables buttons while the API call is in flight). */
   reviews: any[] = [];
 
-  constructor(private api: ApiService, private auth: AuthService,
-    private snackBar: MatSnackBar) { }
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private snackBar: MatSnackBar
+  ) {}
 
-  ngOnInit(): void {
-    this.loadReviews();
-  }
+  ngOnInit(): void { this.loadReviews(); }
 
+  /** Loads all pending KYC submissions from the backend */
   loadReviews(): void {
     this.api.get<any>('/api/admin/kyc/pending').subscribe({
       next: (res) => {
         if (res.success) {
+          // Augment each review with UI-only fields
           this.reviews = res.data.map((k: any) => ({
-            ...k, adminNoteInput: '', loading: false
+            ...k,
+            adminNoteInput: '', // bound to the optional note textarea
+            loading: false      // disables Approve/Reject buttons during the API call
           }));
         }
       },
@@ -144,6 +169,13 @@ export class KycListComponent implements OnInit {
     });
   }
 
+  /**
+   * Submits an Approve or Reject decision for a KYC review.
+   * On success, removes the card from the list immediately so the admin
+   * does not see it again without a page reload.
+   * @param kyc      The KYC review object (augmented with UI fields)
+   * @param decision 'Approved' or 'Rejected'
+   */
   decide(kyc: any, decision: string): void {
     kyc.loading = true;
     this.api.post<any>(`/api/admin/kyc/${kyc.id}/decide`, {
@@ -153,6 +185,7 @@ export class KycListComponent implements OnInit {
       next: (res) => {
         if (res.success) {
           this.snackBar.open(`KYC ${decision}`, 'Close', { duration: 3000 });
+          // Remove the decided card from the list
           this.reviews = this.reviews.filter(r => r.id !== kyc.id);
         } else {
           this.snackBar.open(res.message, 'Close', { duration: 3000 });
@@ -166,7 +199,6 @@ export class KycListComponent implements OnInit {
     });
   }
 
-  logout(): void {
-    this.auth.logout();
-  }
+  /** Logs out the admin and redirects to /login */
+  logout(): void { this.auth.logout(); }
 }

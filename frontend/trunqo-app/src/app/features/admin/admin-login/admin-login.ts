@@ -1,3 +1,19 @@
+/**
+ * admin-login.ts — AdminLoginComponent
+ *
+ * Dedicated login page for admin users.
+ * Route: /admin/login (public — no guard)
+ *
+ * Differences from the regular login page:
+ *  - Calls AuthService.adminLogin() → POST /api/admin/login
+ *  - AdminService proxies the login to AuthService and verifies Role = "Admin"
+ *  - On success, redirects to /admin/kyc (the admin dashboard)
+ *  - Shows a "Restricted — Admins Only" badge to make the purpose clear
+ *  - Two-column layout: left panel with feature list, right panel with form
+ *
+ * On init: if an admin session already exists, skip the login and go straight
+ * to /admin/kyc (prevents showing the login form to already-authenticated admins).
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -94,16 +110,60 @@ import { AuthService } from '../../../core/services/auth';
   `]
 })
 export class AdminLoginComponent implements OnInit {
-  email = ''; password = ''; loading = false; showPass = false; ef = false; pf = false;
-  constructor(private auth: AuthService, private router: Router, private snackBar: MatSnackBar) {}
-  ngOnInit(): void { if (localStorage.getItem('role') === 'Admin') this.router.navigate(['/admin/kyc']); }
+  /** Two-way bound form fields */
+  email = '';
+  password = '';
+  /** Controls the loading spinner and disables the submit button */
+  loading = false;
+  /** Toggles password field between masked and plain text */
+  showPass = false;
+  /** Focus state flags for input wrapper styling */
+  ef = false; // email field focused
+  pf = false; // password field focused
+
+  constructor(
+    private auth: AuthService,
+    private router: Router,
+    private snackBar: MatSnackBar
+  ) {}
+
+  /**
+   * If an admin session already exists, skip the login form and go to the dashboard.
+   * This handles the case where an admin refreshes the /admin/login page.
+   */
+  ngOnInit(): void {
+    if (localStorage.getItem('role') === 'Admin') {
+      this.router.navigate(['/admin/kyc']);
+    }
+  }
+
+  /**
+   * Submits the admin login form.
+   * AdminService verifies the email is an Admin account before validating the password.
+   * On success, AuthService saves the session with role = 'Admin'.
+   */
   login(): void {
-    if (!this.email || !this.password) { this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 }); return; }
+    if (!this.email || !this.password) {
+      this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 });
+      return;
+    }
     this.loading = true;
     this.auth.adminLogin({ email: this.email, password: this.password }).subscribe({
-      next: (res: any) => { if (res.success) { this.router.navigate(['/admin/kyc']); } else { this.snackBar.open(res.message, 'Close', { duration: 3000 }); } this.loading = false; },
-      error: () => { this.snackBar.open('Login failed. Try again.', 'Close', { duration: 3000 }); this.loading = false; }
+      next: (res: any) => {
+        if (res.success) {
+          this.router.navigate(['/admin/kyc']); // go to the KYC review dashboard
+        } else {
+          this.snackBar.open(res.message, 'Close', { duration: 3000 });
+        }
+        this.loading = false;
+      },
+      error: () => {
+        this.snackBar.open('Login failed. Try again.', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
+
+  /** Navigates to the regular user login page */
   goToUserLogin(): void { this.router.navigate(['/login']); }
 }

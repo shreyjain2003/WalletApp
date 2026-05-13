@@ -1,3 +1,20 @@
+/**
+ * landing.ts — LandingComponent
+ *
+ * Public marketing landing page — the first thing visitors see at /.
+ * Route: / (public, no guard)
+ *
+ * Sections (defined in landing.html / landing.css):
+ *  - Navbar with Sign In and Get Started links
+ *  - Hero section with headline, subtitle, CTA button, and mock card visual
+ *  - Features grid (3 cards: Instant Transfers, Secure Vault, Smart Analytics)
+ *  - Footer with links to public info pages (features, pricing, about, etc.)
+ *
+ * The features array is defined here and rendered via *ngFor in the template.
+ * All footer links use routerLink to navigate to the PublicPagesComponent
+ * which handles 8 routes: features, pricing, security, about, careers,
+ * contact, privacy, terms.
+ */
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';

@@ -1,3 +1,19 @@
+/**
+ * support.ts — SupportComponent
+ *
+ * Customer support page — submit tickets and view admin replies.
+ * Route: /support (protected by authGuard)
+ *
+ * Left column: ticket submission form (subject + message)
+ * Right column: list of the user's own tickets with admin replies
+ *
+ * Ticket lifecycle:
+ *  Open → admin replies → Responded
+ *
+ * API calls:
+ *  GET  /api/admin/tickets/my    — load the user's own tickets
+ *  POST /api/admin/tickets/submit — submit a new ticket
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -119,23 +135,63 @@ import { ApiService } from '../../core/services/api';
   `]
 })
 export class SupportComponent implements OnInit {
-  subject = ''; message = ''; submitting = false; loading = true; tickets: any[] = [];
-  sf = false; mf = false;
+  /** Subject field for the new ticket form */
+  subject = '';
+  /** Message body for the new ticket form */
+  message = '';
+  /** Controls the submit button disabled state */
+  submitting = false;
+  /** Controls the full-page spinner */
+  loading = true;
+  /** The user's own tickets loaded from GET /api/admin/tickets/my */
+  tickets: any[] = [];
+  /** Focus state flags for input wrapper styling */
+  sf = false; // subject field focused
+  mf = false; // message field focused
+
   constructor(private api: ApiService, private snackBar: MatSnackBar) {}
+
   ngOnInit(): void { this.loadTickets(); }
+
+  /** Loads the current user's tickets from the backend */
   loadTickets(): void {
     this.api.get<any>('/api/admin/tickets/my').subscribe({
       next: (res) => { if (res.success) this.tickets = res.data; this.loading = false; },
       error: () => { this.snackBar.open('Failed to load tickets', 'Close', { duration: 3000 }); this.loading = false; }
     });
   }
+
+  /**
+   * Submits a new support ticket.
+   * On success, clears the form and reloads the ticket list so the new ticket
+   * appears immediately in the right column.
+   */
   submitTicket(): void {
-    if (!this.subject || !this.message) { this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 }); return; }
+    if (!this.subject || !this.message) {
+      this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 });
+      return;
+    }
     this.submitting = true;
     this.api.post<any>('/api/admin/tickets/submit', { subject: this.subject, message: this.message }).subscribe({
-      next: (res) => { if (res.success) { this.snackBar.open('Ticket submitted!', 'Close', { duration: 3000 }); this.subject = ''; this.message = ''; this.loadTickets(); } else { this.snackBar.open(res.message, 'Close', { duration: 3000 }); } this.submitting = false; },
+      next: (res) => {
+        if (res.success) {
+          this.snackBar.open('Ticket submitted!', 'Close', { duration: 3000 });
+          this.subject = '';
+          this.message = '';
+          this.loadTickets(); // Refresh the list to show the new ticket
+        } else {
+          this.snackBar.open(res.message, 'Close', { duration: 3000 });
+        }
+        this.submitting = false;
+      },
       error: () => { this.snackBar.open('Failed to submit ticket', 'Close', { duration: 3000 }); this.submitting = false; }
     });
   }
-  statusClass(status: string): string { if (status === 'Responded') return 'success'; if (status === 'Open') return 'info'; return 'neutral'; }
+
+  /** Maps a ticket status to a CSS badge class suffix */
+  statusClass(status: string): string {
+    if (status === 'Responded') return 'success';
+    if (status === 'Open') return 'info';
+    return 'neutral';
+  }
 }

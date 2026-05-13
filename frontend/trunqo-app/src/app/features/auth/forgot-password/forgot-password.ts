@@ -1,3 +1,21 @@
+/**
+ * forgot-password.ts — ForgotPasswordComponent
+ *
+ * Step 1 of the password reset flow.
+ * Route: /forgot-password
+ *
+ * Responsibilities:
+ *  - Accepts the user's email address
+ *  - Calls AuthService.forgotPassword() → POST /api/auth/forgot-password
+ *  - The backend generates a 6-digit OTP, stores its SHA-256 hash, and
+ *    publishes a notification event so the OTP is emailed to the user
+ *  - On success (always 200 — backend never reveals if email exists),
+ *    navigates to /verify-otp passing the email as a query parameter
+ *    so the next step can display it and submit the OTP
+ *
+ * Flow: /forgot-password → /verify-otp → /reset-password
+ */
+
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -44,15 +62,41 @@ import { AuthService } from '../../../core/services/auth';
   styles: []
 })
 export class ForgotPasswordComponent {
-  email = ''; loading = false; ef = false;
-  constructor(private auth: AuthService, private router: Router, private snackBar: MatSnackBar) {}
+  /** Two-way bound to the email input */
+  email = '';
+  /** Controls the loading spinner and disables the button during the API call */
+  loading = false;
+  /** Focus state flag for input wrapper styling */
+  ef = false;
+
+  constructor(
+    private auth: AuthService,
+    private router: Router,
+    private snackBar: MatSnackBar
+  ) {}
+
+  /**
+   * Submits the email to trigger an OTP.
+   * The backend always returns 200 regardless of whether the email exists
+   * (to prevent user enumeration), so we always navigate to /verify-otp.
+   * The email is passed as a query param so the OTP page can display it
+   * and include it in the verify-otp API call.
+   */
   submit(): void {
-    if (!this.email.trim()) { this.snackBar.open('Enter your email', 'Close', { duration: 3000 }); return; }
+    if (!this.email.trim()) {
+      this.snackBar.open('Enter your email', 'Close', { duration: 3000 });
+      return;
+    }
     this.loading = true;
     this.auth.forgotPassword(this.email.trim()).subscribe({
-      next: () => { this.router.navigate(['/verify-otp'], { queryParams: { email: this.email.trim() } }); },
-      error: () => { this.snackBar.open('Error sending OTP', 'Close', { duration: 3000 }); this.loading = false; }
+      next: () => {
+        // Navigate to OTP verification step, passing the email as a query param
+        this.router.navigate(['/verify-otp'], { queryParams: { email: this.email.trim() } });
+      },
+      error: () => {
+        this.snackBar.open('Error sending OTP', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
 }
-

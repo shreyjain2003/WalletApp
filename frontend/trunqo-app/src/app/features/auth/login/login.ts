@@ -1,3 +1,23 @@
+/**
+ * login.ts — LoginComponent
+ *
+ * The main sign-in page for regular users.
+ * Route: /login
+ *
+ * Responsibilities:
+ *  - Accepts email + password and calls AuthService.login()
+ *  - On success, redirects to /dashboard (User) or /admin/kyc (Admin)
+ *    depending on the role embedded in the JWT response
+ *  - Shows a snackbar on invalid credentials
+ *  - Clears any stale Admin session on init (prevents admin token
+ *    from persisting if a user navigates directly to /login)
+ *  - Supports Enter-key submission on both fields
+ *  - Toggle password visibility with the eye icon
+ *
+ * The JWT and session data are persisted by AuthService.saveSession()
+ * which also starts the 15-minute token-refresh timer.
+ */
+
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -38,6 +58,7 @@ import { AuthService } from '../../../core/services/auth';
           <input [type]="showPass?'text':'password'" [(ngModel)]="password"
                  placeholder="Enter your password"
                  (focus)="pf=true" (blur)="pf=false" (keyup.enter)="login()"/>
+          <!-- Toggle between plain text and password masking -->
           <mat-icon style="cursor: pointer;" (click)="showPass=!showPass">{{ showPass?'visibility_off':'visibility' }}</mat-icon>
         </div>
         
@@ -57,6 +78,7 @@ import { AuthService } from '../../../core/services/auth';
           <mat-icon>person_add_alt</mat-icon> Create an Account
         </button>
 
+        <!-- Link to the separate admin login page -->
         <div class="auth-footer-text">
           <a routerLink="/admin/login">Admin Portal Access</a>
         </div>
@@ -66,23 +88,62 @@ import { AuthService } from '../../../core/services/auth';
   styles: []
 })
 export class LoginComponent implements OnInit {
-  email = ''; password = ''; loading = false; showPass = false; ef = false; pf = false;
+  /** Two-way bound to the email input field */
+  email = '';
+  /** Two-way bound to the password input field */
+  password = '';
+  /** Controls the loading spinner and disables the submit button during the API call */
+  loading = false;
+  /** Toggles password field between type="password" and type="text" */
+  showPass = false;
+  /** Focus state flags — used to apply the .focused CSS class to input wrappers */
+  ef = false; // email field focused
+  pf = false; // password field focused
 
-  constructor(private auth: AuthService, private router: Router, private snackBar: MatSnackBar) {}
+  constructor(
+    private auth: AuthService,
+    private router: Router,
+    private snackBar: MatSnackBar
+  ) {}
 
-  ngOnInit(): void { if (localStorage.getItem('role') === 'Admin') localStorage.clear(); }
+  /**
+   * On init: clear any stale Admin session.
+   * If an admin was previously logged in and navigates to /login directly,
+   * their admin token would cause the authGuard to redirect them back.
+   * Clearing it here ensures a clean state for user login.
+   */
+  ngOnInit(): void {
+    if (localStorage.getItem('role') === 'Admin') localStorage.clear();
+  }
 
+  /**
+   * Submits the login form.
+   * Normalises the email to lowercase before sending to match how the backend stores it.
+   * On success, redirects based on the role in the JWT response:
+   *   - 'Admin' → /admin/kyc (admin dashboard)
+   *   - 'User'  → /dashboard (user dashboard)
+   */
   login(): void {
-    if (!this.email.trim() || !this.password) { this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 }); return; }
+    if (!this.email.trim() || !this.password) {
+      this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 });
+      return;
+    }
     this.loading = true;
     this.auth.login({ email: this.email.trim().toLowerCase(), password: this.password }).subscribe({
       next: (res: any) => {
-        if (res.success) { this.router.navigate([res.data.role === 'Admin' ? '/admin/kyc' : '/dashboard']); }
-        else { this.snackBar.open(res.message, 'Close', { duration: 3000 }); }
+        if (res.success) {
+          // Route to the correct dashboard based on the user's role
+          this.router.navigate([res.data.role === 'Admin' ? '/admin/kyc' : '/dashboard']);
+        } else {
+          this.snackBar.open(res.message, 'Close', { duration: 3000 });
+        }
         this.loading = false;
       },
-      error: (err: any) => { this.snackBar.open(err?.error?.message ?? 'Login failed', 'Close', { duration: 3000 }); this.loading = false; }
+      error: (err: any) => {
+        // Show the backend error message if available, otherwise a generic fallback
+        this.snackBar.open(err?.error?.message ?? 'Login failed', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
 }
-

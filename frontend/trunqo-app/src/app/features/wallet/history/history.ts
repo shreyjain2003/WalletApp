@@ -1,3 +1,23 @@
+/**
+ * history.ts — HistoryComponent
+ *
+ * Full transaction history page with export functionality.
+ * Route: /wallet/history (protected by authGuard)
+ *
+ * Features:
+ *  - Loads all transactions from GET /api/wallet/history (up to 50 rows)
+ *  - Calculates summary stats: Total Received, Total Sent, Transaction Count
+ *  - Displays a sortable table with type icon, date, reference, amount, balance-after
+ *  - CSV export: downloads ALL transactions (no row cap) via ApiService.download()
+ *  - PDF export: downloads a professionally formatted multi-page PDF statement
+ *
+ * Transaction types and their colour coding:
+ *  topup          → green  (money in)
+ *  transfer_in    → blue   (money in)
+ *  transfer_out   → red    (money out)
+ *  admin_adjustment → teal (admin action)
+ *  cashback       → blue   (campaign reward)
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -146,20 +166,77 @@ import { ApiService } from '../../../core/services/api';
   `]
 })
 export class HistoryComponent implements OnInit {
-  transactions: any[] = []; loading = true; totalReceived = 0; totalSent = 0;
+  /** All transactions returned by the API (up to 50 rows for the page view) */
+  transactions: any[] = [];
+  /** Controls the full-page spinner */
+  loading = true;
+  /** Sum of topup + transfer_in amounts — shown in the summary stat card */
+  totalReceived = 0;
+  /** Sum of transfer_out amounts — shown in the summary stat card */
+  totalSent = 0;
+
   constructor(private api: ApiService, private snackBar: MatSnackBar) {}
+
+  /** Loads all transactions and calculates summary stats on init */
   ngOnInit(): void {
     this.api.get<any>('/api/wallet/history').subscribe({
-      next: (res) => { if (res.success) { this.transactions = res.data; this.calcSummary(); } this.loading = false; },
-      error: () => { this.snackBar.open('Failed to load history', 'Close', { duration: 3000 }); this.loading = false; }
+      next: (res) => {
+        if (res.success) {
+          this.transactions = res.data;
+          this.calcSummary();
+        }
+        this.loading = false;
+      },
+      error: () => {
+        this.snackBar.open('Failed to load history', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
+
+  /** Computes totalReceived and totalSent from the loaded transactions array */
   calcSummary(): void {
-    this.totalReceived = this.transactions.filter(t => t.type === 'topup' || t.type === 'transfer_in').reduce((s, t) => s + t.amount, 0);
-    this.totalSent = this.transactions.filter(t => t.type === 'transfer_out').reduce((s, t) => s + t.amount, 0);
+    this.totalReceived = this.transactions
+      .filter(t => t.type === 'topup' || t.type === 'transfer_in')
+      .reduce((s, t) => s + t.amount, 0);
+    this.totalSent = this.transactions
+      .filter(t => t.type === 'transfer_out')
+      .reduce((s, t) => s + t.amount, 0);
   }
-  getIcon(type: string): string { const m: Record<string,string> = { topup: 'add_circle', transfer_in: 'call_received', transfer_out: 'call_made', admin_adjustment: 'tune', cashback: 'local_offer' }; return m[type] ?? 'swap_horiz'; }
-  getLabel(type: string): string { const m: Record<string,string> = { topup: 'Wallet Top Up', transfer_in: 'Money Received', transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment', cashback: 'Cashback Reward' }; return m[type] ?? type; }
-  downloadCsv(): void { this.api.download('/api/wallet/history/export/csv', `wallet-history-${new Date().toISOString().slice(0,10)}.csv`); }
-  downloadPdf(): void { this.api.download('/api/wallet/history/export/pdf', `wallet-history-${new Date().toISOString().slice(0,10)}.pdf`); }
+
+  /** Maps a transaction type to a Material icon name for the table icon column */
+  getIcon(type: string): string {
+    const m: Record<string, string> = {
+      topup: 'add_circle', transfer_in: 'call_received',
+      transfer_out: 'call_made', admin_adjustment: 'tune', cashback: 'local_offer'
+    };
+    return m[type] ?? 'swap_horiz';
+  }
+
+  /** Maps a transaction type to a human-readable label for the table type column */
+  getLabel(type: string): string {
+    const m: Record<string, string> = {
+      topup: 'Wallet Top Up', transfer_in: 'Money Received',
+      transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment', cashback: 'Cashback Reward'
+    };
+    return m[type] ?? type;
+  }
+
+  /**
+   * Triggers a CSV download of ALL transactions (no row cap).
+   * ApiService.download() creates a temporary anchor element and clicks it
+   * to trigger the browser's save-as dialog.
+   */
+  downloadCsv(): void {
+    this.api.download('/api/wallet/history/export/csv', `wallet-history-${new Date().toISOString().slice(0, 10)}.csv`);
+  }
+
+  /**
+   * Triggers a PDF download of ALL transactions.
+   * The backend generates a multi-page PDF with a professional layout
+   * including summary cards, a transaction table, and page numbers.
+   */
+  downloadPdf(): void {
+    this.api.download('/api/wallet/history/export/pdf', `wallet-history-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
 }

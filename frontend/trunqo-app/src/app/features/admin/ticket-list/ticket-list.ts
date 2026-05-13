@@ -1,3 +1,19 @@
+/**
+ * ticket-list.ts — TicketListComponent
+ *
+ * Admin support ticket management page.
+ * Route: /admin/tickets (protected by adminGuard)
+ *
+ * Features:
+ *  - Loads all support tickets from GET /api/admin/tickets (all users)
+ *  - Shows ticket subject, user email, message, creation date, and status badge
+ *  - Displays existing admin reply if one has been sent
+ *  - For Open tickets: shows a reply textarea and Send Reply button
+ *  - reply() calls POST /api/admin/tickets/{id}/reply
+ *    → updates ticket status to "Responded" in the DB
+ *    → publishes a notification so the user receives an email/in-app alert
+ *  - Updates the ticket card in-place on success (no full reload)
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -121,21 +137,27 @@ import { ApiService } from '../../../core/services/api';
   `]
 })
 export class TicketListComponent implements OnInit {
+  /** All support tickets from all users, augmented with replyInput and loading fields */
   tickets: any[] = [];
 
-  constructor(private api: ApiService, private auth: AuthService,
-    private snackBar: MatSnackBar) { }
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private snackBar: MatSnackBar
+  ) {}
 
-  ngOnInit(): void {
-    this.loadTickets();
-  }
+  ngOnInit(): void { this.loadTickets(); }
 
+  /** Loads all support tickets from GET /api/admin/tickets */
   loadTickets(): void {
     this.api.get<any>('/api/admin/tickets').subscribe({
       next: (res) => {
         if (res.success) {
+          // Augment each ticket with UI-only fields
           this.tickets = res.data.map((t: any) => ({
-            ...t, replyInput: '', loading: false
+            ...t,
+            replyInput: '', // bound to the reply textarea
+            loading: false  // disables the Send Reply button during the API call
           }));
         }
       },
@@ -143,12 +165,19 @@ export class TicketListComponent implements OnInit {
     });
   }
 
+  /**
+   * Sends an admin reply to a support ticket.
+   * On success, updates the ticket card in-place:
+   *  - Sets adminReply to the submitted text (shows the reply section)
+   *  - Changes status to 'Responded' (updates the status badge)
+   *  - Clears the reply input
+   * The backend also publishes a notification so the user is alerted.
+   */
   reply(ticket: any): void {
     if (!ticket.replyInput) {
       this.snackBar.open('Please type a reply', 'Close', { duration: 3000 });
       return;
     }
-
     ticket.loading = true;
     this.api.post<any>(`/api/admin/tickets/${ticket.id}/reply`, {
       reply: ticket.replyInput
@@ -156,6 +185,7 @@ export class TicketListComponent implements OnInit {
       next: (res) => {
         if (res.success) {
           this.snackBar.open('Reply sent!', 'Close', { duration: 3000 });
+          // Update the card in-place without a full reload
           ticket.adminReply = ticket.replyInput;
           ticket.status = 'Responded';
           ticket.replyInput = '';
@@ -171,7 +201,6 @@ export class TicketListComponent implements OnInit {
     });
   }
 
-  logout(): void {
-    this.auth.logout();
-  }
+  /** Logs out the admin and redirects to /login */
+  logout(): void { this.auth.logout(); }
 }

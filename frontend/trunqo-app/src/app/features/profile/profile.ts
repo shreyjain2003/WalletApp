@@ -1,3 +1,24 @@
+/**
+ * profile.ts — ProfileComponent
+ *
+ * User profile page — shows account details, KYC status, and PIN management.
+ * Route: /profile (protected by authGuard)
+ *
+ * Left column:
+ *  - Profile card: avatar initials, name, email, phone, account status badge
+ *  - KYC section: shows document details if submitted, or the submission form
+ *    if KYC has not been submitted or was rejected
+ *
+ * Right column:
+ *  - Transaction PIN card: shows PIN status and links to /set-pin
+ *
+ * KYC submission flow:
+ *  1. User selects document type (passport / national_id / driving_license)
+ *  2. User enters document number
+ *  3. submitKyc() calls POST /api/auth/kyc
+ *  4. Backend publishes to kyc_submissions queue → AdminService picks it up
+ *  5. Profile reloads to show "Pending" status
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -150,34 +171,106 @@ import { TokenRefreshService } from '../../core/services/token-refresh';
   `]
 })
 export class ProfileComponent implements OnInit {
-  profile: any = null; docType = ''; docNumber = '';
-  loading = true; submitting = false; pinSet = false; dnf = false;
-  constructor(private api: ApiService, private auth: AuthService, private tokenRefresh: TokenRefreshService, private snackBar: MatSnackBar) {}
+  /** Full profile object from GET /api/auth/profile (includes kyc sub-object) */
+  profile: any = null;
+  /** Selected document type for KYC submission */
+  docType = '';
+  /** Document number entered for KYC submission */
+  docNumber = '';
+  /** Controls the full-page spinner */
+  loading = true;
+  /** Controls the KYC submit button disabled state */
+  submitting = false;
+  /** Whether the user has a transaction PIN set — controls the PIN card label */
+  pinSet = false;
+  /** Unused flag — kept for future "document not found" state */
+  dnf = false;
+
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private tokenRefresh: TokenRefreshService,
+    private snackBar: MatSnackBar
+  ) {}
+
+  /** On init: check PIN status and load the full profile in parallel */
   ngOnInit(): void {
-    this.auth.getPinStatus().subscribe({ next: (res) => { this.pinSet = !!res?.data?.hasPin; }, error: () => { this.pinSet = false; } });
+    // Check PIN status to show the correct label on the PIN card
+    this.auth.getPinStatus().subscribe({
+      next: (res) => { this.pinSet = !!res?.data?.hasPin; },
+      error: () => { this.pinSet = false; }
+    });
     this.loadProfile();
   }
+
+  /**
+   * Loads the user's profile from GET /api/auth/profile.
+   * Also updates localStorage userStatus so the KYC banner on the dashboard
+   * reflects the latest status without a full page reload.
+   */
   loadProfile(): void {
     this.loading = true;
     this.api.get<any>('/api/auth/profile').subscribe({
-      next: (res) => { if (res.success) { this.profile = res.data; if (res.data.status === 'Active') localStorage.setItem('userStatus', 'Active'); } this.loading = false; },
-      error: () => { this.snackBar.open('Failed to load profile', 'Close', { duration: 3000 }); this.loading = false; }
+      next: (res) => {
+        if (res.success) {
+          this.profile = res.data;
+          // Cache the status so the dashboard KYC banner stays in sync
+          if (res.data.status === 'Active') localStorage.setItem('userStatus', 'Active');
+        }
+        this.loading = false;
+      },
+      error: () => {
+        this.snackBar.open('Failed to load profile', 'Close', { duration: 3000 });
+        this.loading = false;
+      }
     });
   }
-  getInitials(): string { return this.profile?.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() ?? '?'; }
+
+  /** Returns the first two uppercase initials of the user's full name for the avatar */
+  getInitials(): string {
+    return this.profile?.fullName?.split(' ').map((n: string) => n[0]).join('').toUpperCase() ?? '?';
+  }
+
+  /**
+   * Submits the KYC document details.
+   * Calls POST /api/auth/kyc which publishes a kyc_submissions event to RabbitMQ.
+   * AdminService picks it up and creates a KycReview record for admin review.
+   * Reloads the profile after submission to show the "Pending" status.
+   */
   submitKyc(): void {
-    if (!this.docType || !this.docNumber) { this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 }); return; }
+    if (!this.docType || !this.docNumber) {
+      this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 });
+      return;
+    }
     this.submitting = true;
     this.api.post<any>('/api/auth/kyc', { documentType: this.docType, documentNumber: this.docNumber }).subscribe({
-      next: (res) => { if (res.success) { this.snackBar.open('KYC submitted!', 'Close', { duration: 3000 }); this.loadProfile(); } else { this.snackBar.open(res.message, 'Close', { duration: 3000 }); } this.submitting = false; },
-      error: () => { this.snackBar.open('KYC submission failed', 'Close', { duration: 3000 }); this.submitting = false; }
+      next: (res) => {
+        if (res.success) {
+          this.snackBar.open('KYC submitted!', 'Close', { duration: 3000 });
+          this.loadProfile(); // Reload to show the Pending status
+        } else {
+          this.snackBar.open(res.message, 'Close', { duration: 3000 });
+        }
+        this.submitting = false;
+      },
+      error: () => {
+        this.snackBar.open('KYC submission failed', 'Close', { duration: 3000 });
+        this.submitting = false;
+      }
     });
   }
+
+  /**
+   * Maps a status string to a CSS badge class suffix.
+   * Used for both the account status badge and the KYC status badge.
+   */
   statusClass(status: string): string {
     if (status === 'Active' || status === 'Approved') return 'success';
     if (status === 'Pending') return 'warning';
     if (status === 'Rejected') return 'danger';
     return 'neutral';
   }
+
+  /** Triggers an immediate token refresh to pick up the latest KYC status */
   refreshToken(): void { this.tokenRefresh.refreshNow(); }
 }

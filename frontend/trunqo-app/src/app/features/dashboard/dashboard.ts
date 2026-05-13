@@ -1,3 +1,23 @@
+/**
+ * dashboard.ts — DashboardComponent
+ *
+ * The main landing page after login. Gives the user a full overview of their
+ * financial activity in one screen.
+ * Route: /dashboard (protected by authGuard)
+ *
+ * Data loaded in parallel on init (4 API calls):
+ *  1. GET /api/wallet        — balance, currency, lock status
+ *  2. GET /api/wallet/history — last 6 transactions + totals calculation
+ *  3. GET /api/auth/profile  — KYC status (shows banner if Pending)
+ *  4. GET /api/rewards       — current reward points balance
+ *
+ * UI sections:
+ *  - KYC warning banner (shown when status = 'Pending')
+ *  - Premium balance card with Top Up / Send / Request actions
+ *  - 4 stat tiles: Total Received, Total Sent, Reward Points, Transactions
+ *  - Recent transactions list (last 6, links to full history)
+ *  - Quick Actions grid (6 shortcuts to key pages)
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -309,44 +329,94 @@ import { AuthService } from '../../core/services/auth';
   `]
 })
 export class DashboardComponent implements OnInit {
+  /** Full wallet object from GET /api/wallet (balance, currency, isLocked) */
   wallet: any = null;
+  /** Last 6 transactions shown in the Recent Transactions list */
   recentTx: any[] = [];
+  /** Controls the full-page spinner shown while initial data loads */
   loading = true;
+  /** When true, shows the KYC pending banner at the top of the page */
   showKycWarning = false;
+  /** Sum of all topup + transfer_in amounts — shown in the stat tile */
   totalReceived = 0;
+  /** Sum of all transfer_out amounts — shown in the stat tile */
   totalSent = 0;
+  /** Current reward points balance from GET /api/rewards */
   rewardPoints = 0;
 
-  constructor(private api: ApiService, private auth: AuthService, private snackBar: MatSnackBar) {}
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private snackBar: MatSnackBar
+  ) {}
 
+  /**
+   * Fires 4 parallel API calls on page load.
+   * Each call is independent — a failure in one does not block the others.
+   * The loading flag is cleared after the wallet call (the primary data).
+   */
   ngOnInit(): void {
+    // 1. Load wallet balance and status
     this.api.get<any>('/api/wallet').subscribe({
       next: (res) => { if (res.success) this.wallet = res.data; this.loading = false; },
       error: () => this.loading = false
     });
+
+    // 2. Load transaction history — slice to 6 for the recent list, compute totals
     this.api.get<any>('/api/wallet/history').subscribe({
       next: (res) => {
         if (res.success) {
           this.recentTx = res.data.slice(0, 6);
-          this.totalReceived = res.data.filter((t: any) => t.type === 'topup' || t.type === 'transfer_in').reduce((s: number, t: any) => s + t.amount, 0);
-          this.totalSent = res.data.filter((t: any) => t.type === 'transfer_out').reduce((s: number, t: any) => s + t.amount, 0);
+          // Total received = topups + incoming transfers
+          this.totalReceived = res.data
+            .filter((t: any) => t.type === 'topup' || t.type === 'transfer_in')
+            .reduce((s: number, t: any) => s + t.amount, 0);
+          // Total sent = outgoing transfers only
+          this.totalSent = res.data
+            .filter((t: any) => t.type === 'transfer_out')
+            .reduce((s: number, t: any) => s + t.amount, 0);
         }
       }
     });
+
+    // 3. Check KYC status — show banner if user has not completed KYC
     this.api.get<any>('/api/auth/profile').subscribe({
       next: (res) => { if (res.success) this.showKycWarning = res.data.status === 'Pending'; }
     });
+
+    // 4. Load reward points balance for the stat tile
     this.api.get<any>('/api/rewards').subscribe({
       next: (res) => { if (res.success) this.rewardPoints = res.data.pointsBalance ?? 0; }
     });
   }
 
+  /**
+   * Maps a transaction type string to a Material icon name.
+   * Used in the recent transactions list to show a contextual icon per row.
+   */
   txIcon(type: string): string {
-    const m: Record<string, string> = { topup: 'add_circle', transfer_in: 'call_received', transfer_out: 'call_made', admin_adjustment: 'tune', cashback: 'local_offer' };
+    const m: Record<string, string> = {
+      topup: 'add_circle',
+      transfer_in: 'call_received',
+      transfer_out: 'call_made',
+      admin_adjustment: 'tune',
+      cashback: 'local_offer'
+    };
     return m[type] ?? 'sync_alt';
   }
+
+  /**
+   * Maps a transaction type string to a human-readable label.
+   * Used in the recent transactions list to show a friendly description per row.
+   */
   txLabel(type: string): string {
-    const m: Record<string, string> = { topup: 'Wallet Top Up', transfer_in: 'Money Received', transfer_out: 'Money Sent', admin_adjustment: 'Admin Adjustment', cashback: 'Cashback Reward' };
+    const m: Record<string, string> = {
+      topup: 'Wallet Top Up',
+      transfer_in: 'Money Received',
+      transfer_out: 'Money Sent',
+      admin_adjustment: 'Admin Adjustment',
+      cashback: 'Cashback Reward'
+    };
     return m[type] ?? type;
   }
 }

@@ -1,3 +1,26 @@
+/**
+ * transfer.ts — TransferComponent
+ *
+ * Money transfer page — sends funds from the current user to another registered user.
+ * Route: /wallet/transfer (protected by authGuard)
+ *
+ * Transfer flow:
+ *  1. User types receiver's email → lookupReceiver() validates wallet exists
+ *     (two calls: /api/wallet/by-email for userId, /api/auth/lookup-by-email for name)
+ *  2. User enters amount and optional note
+ *  3. initTransfer() checks PIN status:
+ *     - No PIN → redirects to /set-pin with a warning
+ *     - Has PIN → opens the PIN numpad modal
+ *  4. User enters 4-digit PIN in the modal
+ *  5. verifyPin() closes modal and calls executeTransfer() with the PIN
+ *  6. POST /api/wallet/transfer — backend verifies PIN, checks balances, executes atomically
+ *  7. On success, saves contact to localStorage and navigates to /wallet/history
+ *
+ * Recent contacts: up to 5 previous recipients shown as quick-select avatars.
+ * Selecting a contact pre-fills email, userId, and last-used amount.
+ *
+ * KYC gate: if status is not 'Active', the form is hidden and a banner is shown.
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -226,23 +249,39 @@ import { ContactsService, Contact } from '../../../core/services/contacts';
   `]
 })
 export class TransferComponent implements OnInit {
+  /** Receiver's email — typed by user or pre-filled from a recent contact */
   receiverEmail = '';
+  /** Receiver's userId — fetched from /api/wallet/by-email, sent in the transfer request */
   receiverUserId = '';
+  /** Receiver's display name — fetched from /api/auth/lookup-by-email */
   receiverName = '';
+  /** Error message shown below the email input when lookup fails */
   receiverError = '';
+  /** True while the receiver lookup API calls are in flight */
   lookingUp = false;
+  /** Transfer amount in INR */
   amount = 0;
+  /** Optional note stored with the transaction */
   note = '';
+  /** Controls the full-page spinner */
   loading = true;
+  /** Quick-select amount chips */
   quickAmounts = [500, 1000, 2000, 5000];
+  /** Up to 5 recent recipients loaded from localStorage via ContactsService */
   recentContacts: Contact[] = [];
 
+  /** When true, hides the form and shows the KYC blocked banner */
   kycBlocked = false;
+  /** 'Pending' or 'Rejected' — used to show the correct banner message */
   kycStatus = '';
 
+  /** Whether the current user has a transaction PIN set */
   hasPin = false;
+  /** Controls the PIN numpad modal overlay */
   showPinPrompt = false;
+  /** PIN digits entered so far (max 4) */
   enteredPin = '';
+  /** Error message shown inside the PIN modal */
   pinError = '';
 
   constructor(
@@ -253,21 +292,37 @@ export class TransferComponent implements OnInit {
     private contacts: ContactsService
   ) {}
 
+  /**
+   * On init: load recent contacts, check PIN status, check KYC status.
+   * All three are independent — none blocks the others.
+   */
   ngOnInit(): void {
+    // Load recent contacts from localStorage for the quick-select row
     this.recentContacts = this.contacts.getContacts();
+
+    // Check if the user has a PIN set — affects the send button label and flow
     this.auth.getPinStatus().subscribe({
       next: (res) => { this.hasPin = !!res?.data?.hasPin; },
       error: () => { this.hasPin = false; }
     });
+
+    // Check KYC status — block the form if not Active
     this.api.get<any>('/api/auth/profile').subscribe({
       next: (res) => {
-        if (res.success) { this.kycStatus = res.data.status; this.kycBlocked = res.data.status !== 'Active'; }
+        if (res.success) {
+          this.kycStatus = res.data.status;
+          this.kycBlocked = res.data.status !== 'Active';
+        }
         this.loading = false;
       },
       error: () => { this.loading = false; }
     });
   }
 
+  /**
+   * Pre-fills the form from a recently-used contact.
+   * Clicking a contact avatar sets email, userId, name, and last-used amount.
+   */
   selectContact(contact: Contact): void {
     this.receiverEmail = contact.email;
     this.receiverUserId = contact.userId;
@@ -276,16 +331,26 @@ export class TransferComponent implements OnInit {
     this.amount = contact.amount;
   }
 
+  /**
+   * Looks up the receiver when the email field loses focus.
+   * Makes two sequential calls:
+   *  1. /api/wallet/by-email — confirms the receiver has an active wallet, gets userId
+   *  2. /api/auth/lookup-by-email — gets the receiver's display name
+   * Shows a green "verified" badge on success, red error on failure.
+   */
   lookupReceiver(): void {
     if (!this.receiverEmail) return;
     this.receiverName = '';
     this.receiverError = '';
     this.receiverUserId = '';
     this.lookingUp = true;
+
+    // Step 1: verify the receiver has an active wallet
     this.api.get<any>(`/api/wallet/by-email?email=${this.receiverEmail}`).subscribe({
       next: (res) => {
         if (res.success) {
           this.receiverUserId = res.data.userId;
+          // Step 2: get the receiver's display name for the UI
           this.api.get<any>(`/api/auth/lookup-by-email?email=${encodeURIComponent(this.receiverEmail)}`).subscribe({
             next: (authRes) => { if (authRes.success) this.receiverName = authRes.data.fullName; this.lookingUp = false; },
             error: () => { this.receiverName = this.receiverEmail; this.lookingUp = false; }
@@ -299,40 +364,65 @@ export class TransferComponent implements OnInit {
     });
   }
 
+  /**
+   * Called when the user clicks the Send button.
+   * If no PIN is set, redirects to /set-pin with a warning.
+   * If PIN is set, opens the PIN numpad modal.
+   */
   initTransfer(): void {
     if (!this.receiverUserId || !this.amount || this.amount <= 0) {
-      this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 }); return;
+      this.snackBar.open('Please fill in all fields', 'Close', { duration: 3000 });
+      return;
     }
     if (!this.hasPin) {
+      // Force the user to set a PIN before they can transfer
       this.snackBar.open('Set your transaction PIN before transferring money.', 'Close', { duration: 4000 });
-      this.router.navigate(['/set-pin']); return;
+      this.router.navigate(['/set-pin']);
+      return;
     }
+    // Open the PIN modal
     this.enteredPin = '';
     this.pinError = '';
     this.showPinPrompt = true;
   }
 
+  /** Appends a digit to the PIN (max 4 digits) */
   pinKey(key: string): void {
     if (this.enteredPin.length < 4) { this.enteredPin += key; this.pinError = ''; }
   }
 
+  /** Removes the last digit from the PIN */
   pinClear(): void { this.enteredPin = this.enteredPin.slice(0, -1); this.pinError = ''; }
 
+  /** Closes the modal and executes the transfer with the entered PIN */
   verifyPin(): void { this.showPinPrompt = false; this.executeTransfer(this.enteredPin); }
 
+  /** Closes the modal without executing the transfer */
   cancelPin(): void { this.showPinPrompt = false; this.enteredPin = ''; this.pinError = ''; }
 
+  /**
+   * Executes the actual transfer API call.
+   * The transactionPin is sent to the backend which verifies it against the stored hash.
+   * On success, saves the receiver as a recent contact and navigates to history.
+   */
   private executeTransfer(transactionPin?: string): void {
     this.loading = true;
     this.api.post<any>('/api/wallet/transfer', {
       receiverUserId: this.receiverUserId,
       amount: this.amount,
       note: this.note,
-      transactionPin
+      transactionPin  // backend verifies this against the BCrypt hash
     }).subscribe({
       next: (res) => {
         if (res.success) {
-          this.contacts.saveContact({ userId: this.receiverUserId, name: this.receiverName, email: this.receiverEmail, lastSent: new Date().toISOString(), amount: this.amount });
+          // Save this recipient for the recent contacts quick-select
+          this.contacts.saveContact({
+            userId: this.receiverUserId,
+            name: this.receiverName,
+            email: this.receiverEmail,
+            lastSent: new Date().toISOString(),
+            amount: this.amount
+          });
           this.snackBar.open(`Rs.${this.amount} sent to ${this.receiverName}!`, 'Close', { duration: 3000 });
           this.router.navigate(['/wallet/history']);
         } else {
@@ -347,6 +437,7 @@ export class TransferComponent implements OnInit {
     });
   }
 
+  /** Returns the first two uppercase initials of a name for avatar display */
   getInitials(name: string): string {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   }

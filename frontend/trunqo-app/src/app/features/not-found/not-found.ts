@@ -1,3 +1,13 @@
+/**
+ * not-found.ts — NotFoundComponent
+ *
+ * Custom 404 page shown when the user navigates to an unknown route.
+ * Route: /not-found (also the redirect target for the ** wildcard route)
+ *
+ * Shows a large "404" heading, a friendly message, and a "Back to Dashboard"
+ * button so the user can recover without using the browser back button.
+ * No data loading needed — this is a purely static display component.
+ */
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';

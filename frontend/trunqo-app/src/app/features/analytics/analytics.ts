@@ -1,3 +1,23 @@
+/**
+ * analytics.ts — AnalyticsComponent
+ *
+ * Spending analytics page with Chart.js visualisations.
+ * Route: /analytics (protected by authGuard)
+ *
+ * Data source: GET /api/wallet/history (same endpoint as the history page)
+ *
+ * Charts rendered after data loads (not in ngAfterViewInit):
+ *  - Doughnut chart: transaction count breakdown (topup / sent / received)
+ *  - Bar chart: total amount by transaction type
+ *
+ * Summary cards: Total Received, Total Sent
+ * Count row: Top Ups, Sent, Received, Total
+ * Recent Activity: last 5 transactions
+ *
+ * Chart.js is registered globally at the top of the file.
+ * Existing chart instances are destroyed before re-rendering to prevent
+ * "Canvas is already in use" errors on navigation.
+ */
 import { Component, OnInit, AfterViewInit, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -5,6 +25,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api';
 import { Chart, registerables } from 'chart.js';
 
+// Register all Chart.js components (scales, elements, plugins) globally
 Chart.register(...registerables);
 
 @Component({
@@ -131,13 +152,19 @@ Chart.register(...registerables);
 })
 export class AnalyticsComponent implements OnInit, AfterViewInit {
 
+  /** Template reference to the doughnut chart canvas element */
   @ViewChild('donutChart') donutChartRef!: ElementRef;
+  /** Template reference to the bar chart canvas element */
   @ViewChild('barChart') barChartRef!: ElementRef;
 
+  /** Controls the full-page spinner */
   loading = true;
+  /** All transactions from GET /api/wallet/history */
   transactions: any[] = [];
+  /** Last 5 transactions shown in the Recent Activity list */
   recentTransactions: any[] = [];
 
+  /** Summary stats computed from the transactions array */
   totalReceived = 0;
   totalSent = 0;
   topupCount = 0;
@@ -145,12 +172,17 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
   receivedCount = 0;
   totalTransactions = 0;
 
+  /** Chart.js instances — stored so they can be destroyed before re-rendering */
   private donutChartInstance: Chart | null = null;
   private barChartInstance: Chart | null = null;
 
-  constructor(private api: ApiService,
-    private snackBar: MatSnackBar) { }
+  constructor(private api: ApiService, private snackBar: MatSnackBar) { }
 
+  /**
+   * Loads transaction history, computes stats, and renders charts.
+   * Charts are rendered with a 100ms setTimeout after data loads to ensure
+   * the canvas elements are in the DOM before Chart.js tries to use them.
+   */
   ngOnInit(): void {
     this.api.get<any>('/api/wallet/history').subscribe({
       next: (res) => {
@@ -158,7 +190,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
           this.transactions = res.data;
           this.calculateStats();
           this.recentTransactions = res.data.slice(0, 5);
-          // Render charts after data is ready, not on a blind timeout
+          // Defer chart rendering until after Angular has rendered the canvas elements
           setTimeout(() => this.renderCharts(), 100);
         }
         this.loading = false;
@@ -170,10 +202,15 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
     });
   }
 
-  ngAfterViewInit(): void {
-    // Charts are rendered after data loads in ngOnInit, not here
-  }
+  /**
+   * ngAfterViewInit is intentionally empty.
+   * Charts are rendered in ngOnInit after data loads, not here,
+   * because the canvas elements are conditionally rendered (*ngIf="totalTransactions > 0")
+   * and may not exist in the DOM until data is available.
+   */
+  ngAfterViewInit(): void { }
 
+  /** Computes all summary statistics from the loaded transactions array */
   calculateStats(): void {
     this.topupCount = this.transactions.filter(t => t.type === 'topup').length;
     this.sentCount = this.transactions.filter(t => t.type === 'transfer_out').length;
@@ -189,14 +226,19 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
       .reduce((sum, t) => sum + t.amount, 0);
   }
 
+  /**
+   * Renders both Chart.js charts.
+   * Destroys existing instances first to prevent "Canvas already in use" errors
+   * that occur when navigating away and back to this page.
+   */
   renderCharts(): void {
     if (this.totalTransactions === 0) return;
 
-    // Donut Chart
+    // ── Doughnut Chart: transaction count breakdown ────────────────────────
     if (this.donutChartRef) {
+      // Destroy the previous instance before creating a new one
       if (this.donutChartInstance) this.donutChartInstance.destroy();
-      this.donutChartInstance = new Chart(
-        this.donutChartRef.nativeElement, {
+      this.donutChartInstance = new Chart(this.donutChartRef.nativeElement, {
         type: 'doughnut',
         data: {
           labels: ['Top Ups', 'Money Sent', 'Money Received'],
@@ -210,43 +252,30 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          cutout: '72%',
-          plugins: {
-            legend: { display: false }
-          }
+          cutout: '72%', // thick ring style
+          plugins: { legend: { display: false } } // custom legend below the chart
         }
       });
     }
 
-    // Bar Chart
+    // ── Bar Chart: total amount by transaction type ────────────────────────
     if (this.barChartRef) {
-      const topupTotal = this.transactions
-        .filter(t => t.type === 'topup')
-        .reduce((s, t) => s + t.amount, 0);
-      const sentTotal = this.transactions
-        .filter(t => t.type === 'transfer_out')
-        .reduce((s, t) => s + t.amount, 0);
-      const receivedTotal = this.transactions
-        .filter(t => t.type === 'transfer_in')
-        .reduce((s, t) => s + t.amount, 0);
+      const topupTotal = this.transactions.filter(t => t.type === 'topup').reduce((s, t) => s + t.amount, 0);
+      const sentTotal = this.transactions.filter(t => t.type === 'transfer_out').reduce((s, t) => s + t.amount, 0);
+      const receivedTotal = this.transactions.filter(t => t.type === 'transfer_in').reduce((s, t) => s + t.amount, 0);
 
-      // We need to set up custom styling for Chart.js so gridlines fit the dark mode
+      // Apply theme-consistent defaults to Chart.js global config
       Chart.defaults.color = '#6B7280';
       Chart.defaults.font.family = 'Inter, sans-serif';
 
       if (this.barChartInstance) this.barChartInstance.destroy();
-      this.barChartInstance = new Chart(
-        this.barChartRef.nativeElement, {
+      this.barChartInstance = new Chart(this.barChartRef.nativeElement, {
         type: 'bar',
         data: {
           labels: ['Top Ups', 'Sent', 'Received'],
           datasets: [{
             data: [topupTotal, sentTotal, receivedTotal],
-            backgroundColor: [
-              'rgba(192, 133, 82, 0.8)',
-              'rgba(239, 68, 68, 0.8)',
-              'rgba(59, 130, 246, 0.8)'
-            ],
+            backgroundColor: ['rgba(192, 133, 82, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(59, 130, 246, 0.8)'],
             borderRadius: 8,
             borderSkipped: false
           }]
@@ -254,26 +283,21 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
+          plugins: { legend: { display: false } },
           scales: {
             y: {
               beginAtZero: true,
               grid: { color: 'rgba(255, 255, 255, 0.05)' },
-              ticks: {
-                callback: (val) => `₹${Number(val).toLocaleString()}`
-              }
+              ticks: { callback: (val) => `₹${Number(val).toLocaleString()}` }
             },
-            x: { 
-              grid: { display: false } 
-            }
+            x: { grid: { display: false } }
           }
         }
       });
     }
   }
 
+  /** Maps a transaction type to a Material icon name */
   getIcon(type: string): string {
     switch (type) {
       case 'topup': return 'add_circle';
@@ -283,6 +307,7 @@ export class AnalyticsComponent implements OnInit, AfterViewInit {
     }
   }
 
+  /** Maps a transaction type to a human-readable label */
   getLabel(type: string): string {
     switch (type) {
       case 'topup': return 'Top Up';

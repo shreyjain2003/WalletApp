@@ -1,3 +1,24 @@
+/**
+ * set-pin.ts — SetPinComponent
+ *
+ * Transaction PIN management page — set, change, or remove the 4-digit PIN.
+ * Route: /set-pin (protected by authGuard)
+ *
+ * The PIN is required before every money transfer. It is BCrypt-hashed
+ * on the backend — the plain PIN is never stored anywhere.
+ *
+ * Flow for NEW PIN (hasPin = false):
+ *  Step 1: Enter new PIN → stored in step1Pin
+ *  Step 2: Confirm PIN → must match step1Pin → calls setPin()
+ *
+ * Flow for CHANGING PIN (hasPin = true):
+ *  Step 1: Enter current PIN → stored in currentStoredPin
+ *  Step 2: Enter new PIN → stored in step1Pin
+ *  Step 3: Confirm new PIN → must match step1Pin → calls setPin(currentPin)
+ *
+ * Remove PIN: available on Step 1 when hasPin = true.
+ *  Requires the current PIN to prevent unauthorised removal.
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -113,37 +134,113 @@ import { AuthService } from '../../core/services/auth';
   `]
 })
 export class SetPinComponent implements OnInit {
-  currentPin = ''; step1Pin = ''; currentStoredPin = ''; currentStep = 1; hasPin = false; errorMsg = '';
+  /** Digits entered in the current numpad step */
+  currentPin = '';
+  /** PIN entered in step 1 (new PIN) — held for comparison in step 2 */
+  step1Pin = '';
+  /** Current PIN entered in step 1 when changing an existing PIN */
+  currentStoredPin = '';
+  /** Which step of the flow the user is on (1, 2, or 3) */
+  currentStep = 1;
+  /** Whether the user already has a PIN set — determines the flow */
+  hasPin = false;
+  /** Inline error message shown below the PIN dots */
+  errorMsg = '';
+
   constructor(private auth: AuthService, private snackBar: MatSnackBar) {}
+
   ngOnInit(): void { this.loadPinStatus(); }
-  pressKey(key: string): void { if (this.currentPin.length < 4) { this.currentPin += key; this.errorMsg = ''; } }
-  clearPin(): void { if (this.currentPin.length > 0) { this.currentPin = this.currentPin.slice(0, -1); } this.errorMsg = ''; }
+
+  /** Appends a digit to the current PIN (max 4 digits) */
+  pressKey(key: string): void {
+    if (this.currentPin.length < 4) { this.currentPin += key; this.errorMsg = ''; }
+  }
+
+  /** Removes the last digit from the current PIN */
+  clearPin(): void {
+    if (this.currentPin.length > 0) { this.currentPin = this.currentPin.slice(0, -1); }
+    this.errorMsg = '';
+  }
+
+  /**
+   * Advances the flow to the next step or submits the PIN.
+   * Handles both the new-PIN flow (2 steps) and the change-PIN flow (3 steps).
+   */
   confirmStep(): void {
     if (this.currentPin.length < 4) return;
+
     if (!this.hasPin) {
-      if (this.currentStep === 1) { this.step1Pin = this.currentPin; this.currentPin = ''; this.currentStep = 2; return; }
-      if (this.currentPin !== this.step1Pin) { this.errorMsg = 'PINs do not match. Try again.'; this.currentPin = ''; this.currentStep = 1; this.step1Pin = ''; return; }
+      // ── New PIN flow ──────────────────────────────────────────────────────
+      if (this.currentStep === 1) {
+        // Step 1: store the new PIN and advance to confirmation
+        this.step1Pin = this.currentPin; this.currentPin = ''; this.currentStep = 2; return;
+      }
+      // Step 2: confirm the PIN matches
+      if (this.currentPin !== this.step1Pin) {
+        this.errorMsg = 'PINs do not match. Try again.';
+        this.currentPin = ''; this.currentStep = 1; this.step1Pin = ''; return;
+      }
+      // PINs match — submit to the backend
       this.auth.setPin({ currentPin: null, newPin: this.step1Pin, confirmPin: this.currentPin }).subscribe({
-        next: (res) => { if (res.success) { this.snackBar.open('PIN set successfully!', 'Close', { duration: 3000 }); this.hasPin = true; this.resetFlow(); } else { this.errorMsg = res.message; this.currentPin = ''; } },
+        next: (res) => {
+          if (res.success) { this.snackBar.open('PIN set successfully!', 'Close', { duration: 3000 }); this.hasPin = true; this.resetFlow(); }
+          else { this.errorMsg = res.message; this.currentPin = ''; }
+        },
         error: (err: any) => { this.errorMsg = err?.error?.message ?? 'Failed to set PIN.'; this.currentPin = ''; }
       });
       return;
     }
-    if (this.currentStep === 1) { this.currentStoredPin = this.currentPin; this.currentPin = ''; this.currentStep = 2; return; }
-    if (this.currentStep === 2) { this.step1Pin = this.currentPin; this.currentPin = ''; this.currentStep = 3; return; }
-    if (this.currentPin !== this.step1Pin) { this.errorMsg = 'PINs do not match. Try again.'; this.currentPin = ''; this.currentStep = 2; return; }
+
+    // ── Change PIN flow ───────────────────────────────────────────────────
+    if (this.currentStep === 1) {
+      // Step 1: store the current PIN for verification
+      this.currentStoredPin = this.currentPin; this.currentPin = ''; this.currentStep = 2; return;
+    }
+    if (this.currentStep === 2) {
+      // Step 2: store the new PIN
+      this.step1Pin = this.currentPin; this.currentPin = ''; this.currentStep = 3; return;
+    }
+    // Step 3: confirm the new PIN matches
+    if (this.currentPin !== this.step1Pin) {
+      this.errorMsg = 'PINs do not match. Try again.'; this.currentPin = ''; this.currentStep = 2; return;
+    }
+    // All three steps complete — submit the change
     this.auth.setPin({ currentPin: this.currentStoredPin, newPin: this.step1Pin, confirmPin: this.currentPin }).subscribe({
-      next: (res) => { if (res.success) { this.snackBar.open('PIN changed successfully!', 'Close', { duration: 3000 }); this.resetFlow(); } else { this.errorMsg = res.message; this.currentPin = ''; this.currentStep = 1; this.step1Pin = ''; this.currentStoredPin = ''; } },
+      next: (res) => {
+        if (res.success) { this.snackBar.open('PIN changed successfully!', 'Close', { duration: 3000 }); this.resetFlow(); }
+        else { this.errorMsg = res.message; this.currentPin = ''; this.currentStep = 1; this.step1Pin = ''; this.currentStoredPin = ''; }
+      },
       error: (err: any) => { this.errorMsg = err?.error?.message ?? 'Failed to update PIN.'; this.currentPin = ''; this.currentStep = 1; this.step1Pin = ''; this.currentStoredPin = ''; }
     });
   }
+
+  /**
+   * Removes the PIN entirely.
+   * Requires the current PIN (entered in step 1) to prevent unauthorised removal.
+   */
   removePin(): void {
     if (this.currentPin.length < 4) { this.errorMsg = 'Enter your current PIN to remove it.'; return; }
     this.auth.removePin(this.currentPin).subscribe({
-      next: (res) => { if (res.success) { this.hasPin = false; this.snackBar.open('PIN removed.', 'Close', { duration: 3000 }); this.resetFlow(); } else { this.errorMsg = res.message; this.currentPin = ''; } },
+      next: (res) => {
+        if (res.success) { this.hasPin = false; this.snackBar.open('PIN removed.', 'Close', { duration: 3000 }); this.resetFlow(); }
+        else { this.errorMsg = res.message; this.currentPin = ''; }
+      },
       error: (err: any) => { this.errorMsg = err?.error?.message ?? 'Failed to remove PIN.'; this.currentPin = ''; }
     });
   }
-  private loadPinStatus(): void { this.auth.getPinStatus().subscribe({ next: (res) => { this.hasPin = !!res?.data?.hasPin; }, error: () => { this.hasPin = false; } }); }
-  private resetFlow(): void { this.currentPin = ''; this.step1Pin = ''; this.currentStoredPin = ''; this.currentStep = 1; this.errorMsg = ''; this.loadPinStatus(); }
+
+  /** Fetches the current PIN status from the backend to initialise the flow */
+  private loadPinStatus(): void {
+    this.auth.getPinStatus().subscribe({
+      next: (res) => { this.hasPin = !!res?.data?.hasPin; },
+      error: () => { this.hasPin = false; }
+    });
+  }
+
+  /** Resets all flow state back to step 1 and reloads the PIN status */
+  private resetFlow(): void {
+    this.currentPin = ''; this.step1Pin = ''; this.currentStoredPin = '';
+    this.currentStep = 1; this.errorMsg = '';
+    this.loadPinStatus();
+  }
 }

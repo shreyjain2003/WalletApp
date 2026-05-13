@@ -1,3 +1,23 @@
+/**
+ * user-list.ts — UserListComponent
+ *
+ * Admin user management page — view, edit, and delete registered users.
+ * Route: /admin/users (protected by adminGuard)
+ *
+ * Features:
+ *  - Loads all users from GET /api/auth/internal/users
+ *  - For each user, loads their wallet via GET /api/wallet/by-email
+ *  - Summary cards: Active count, Pending count, Total count
+ *  - Search bar: filters by name or email (client-side, no extra API call)
+ *  - Edit modal: update name/email/phone, adjust wallet balance, lock/unlock wallet
+ *    → 3 sequential API calls: PUT /api/auth/internal/user/{id},
+ *      PUT /api/wallet/admin/adjust, PUT /api/wallet/admin/lock
+ *  - Delete modal: confirmation dialog → DELETE /api/auth/internal/user/{id}
+ *    → removes the user card from the list immediately
+ *
+ * Edit validation mirrors the backend's data annotations (name ≥3 chars,
+ * valid email, Indian phone format, non-negative balance).
+ */
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -355,40 +375,57 @@ import { AuthService } from '../../../core/services/auth';
   `]
 })
 export class UserListComponent implements OnInit {
+  /** All users loaded from the backend */
   users: any[] = [];
+  /** Subset of users matching the current search query */
   filteredUsers: any[] = [];
+  /** Controls the full-page spinner */
   loading = true;
+  /** Current search query — filters filteredUsers client-side */
   searchQuery = '';
+  /** Count of users with status = 'Active' — shown in the summary card */
   activeCount = 0;
+  /** Count of users with status = 'Pending' — shown in the summary card */
   pendingCount = 0;
 
-  // Edit wallet
+  // ── Edit modal state ──────────────────────────────────────────────────────
+  /** The user currently being edited (null = modal closed) */
   editingUser: any = null;
+  /** Form fields bound to the edit modal inputs */
   editFullName = '';
   editEmail = '';
   editPhoneNumber = '';
   newBalance = 0;
   adjustReason = '';
+  /** Whether the wallet should be locked after saving */
   editingLocked = false;
+  /** Controls the Save Changes button disabled state */
   saving = false;
 
-  // Delete user
+  // ── Delete modal state ────────────────────────────────────────────────────
+  /** The user pending deletion (null = modal closed) */
   deletingUser: any = null;
+  /** Controls the Delete Permanently button disabled state */
   deleting = false;
 
   constructor(
     private api: ApiService,
     private auth: AuthService,
     private snackBar: MatSnackBar
-  ) { }
+  ) {}
 
+  /**
+   * Loads all users then fetches each user's wallet balance in sequence.
+   * Wallet data is loaded per-user via GET /api/wallet/by-email because
+   * there is no bulk wallet endpoint.
+   */
   loadUsers(): void {
     this.loading = true;
     this.api.get<any>('/api/auth/internal/users').subscribe({
       next: async (res) => {
         if (res.success) {
           this.users = res.data;
-          // Load wallet info for each user
+          // Load wallet info for each user (sequential async calls)
           await this.loadWallets();
           this.activeCount = this.users.filter((u: any) => u.status === 'Active').length;
           this.pendingCount = this.users.filter((u: any) => u.status === 'Pending').length;
@@ -403,27 +440,26 @@ export class UserListComponent implements OnInit {
     });
   }
 
+  /**
+   * Fetches wallet data for each user sequentially.
+   * Sets user.wallet = null if the user has no wallet yet (KYC not approved).
+   * Uses Promise wrapping of the Observable so we can await each call.
+   */
   async loadWallets(): Promise<void> {
     for (const user of this.users) {
       try {
         const res: any = await new Promise((resolve, reject) => {
           this.api.get<any>(`/api/wallet/by-email?email=${encodeURIComponent(user.email)}`)
-            .subscribe({
-              next: resolve,
-              error: reject
-            });
+            .subscribe({ next: resolve, error: reject });
         });
-        if (res?.success) {
-          user.wallet = res.data;
-        } else {
-          user.wallet = null;
-        }
+        user.wallet = res?.success ? res.data : null;
       } catch {
-        user.wallet = null;
+        user.wallet = null; // wallet not found or service unavailable
       }
     }
   }
 
+  /** Filters the user list client-side by name or email */
   filterUsers(): void {
     const q = this.searchQuery.toLowerCase();
     this.filteredUsers = this.users.filter(u =>
@@ -432,11 +468,14 @@ export class UserListComponent implements OnInit {
     );
   }
 
+  /** Returns the first two uppercase initials of a name for avatar display */
   getInitials(name: string): string {
     return name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) ?? '?';
   }
 
-  // Edit Wallet
+  // ── Edit modal ────────────────────────────────────────────────────────────
+
+  /** Opens the edit modal and pre-fills all fields from the selected user */
   startEdit(user: any): void {
     this.editingUser = user;
     this.editFullName = user.fullName ?? '';
@@ -447,49 +486,41 @@ export class UserListComponent implements OnInit {
     this.editingLocked = user.wallet?.isLocked ?? false;
   }
 
-  cancelEdit(): void {
-    this.editingUser = null;
-  }
+  /** Closes the edit modal without saving */
+  cancelEdit(): void { this.editingUser = null; }
 
+  /**
+   * Client-side validation for the edit form.
+   * Returns an error message string if invalid, or null if valid.
+   * Mirrors the backend's data annotations to give immediate feedback.
+   */
   private validateEditForm(): string | null {
     const fullName = this.editFullName.trim();
     const email = this.editEmail.trim().toLowerCase();
     const phone = this.editPhoneNumber.trim();
-
-    if (!fullName || !email || !phone) {
-      return 'Please fill in all user details';
-    }
-
-    if (fullName.length < 3) {
-      return 'Full name must be at least 3 characters';
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return 'Enter a valid email address';
-    }
-
-    if (!/^[6-9]\d{9}$/.test(phone)) {
-      return 'Enter a valid 10-digit mobile number';
-    }
-
-    if (this.newBalance < 0) {
-      return 'Balance cannot be negative';
-    }
-
+    if (!fullName || !email || !phone) return 'Please fill in all user details';
+    if (fullName.length < 3) return 'Full name must be at least 3 characters';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address';
+    if (!/^[6-9]\d{9}$/.test(phone)) return 'Enter a valid 10-digit mobile number';
+    if (this.newBalance < 0) return 'Balance cannot be negative';
     return null;
   }
 
+  /**
+   * Saves all changes from the edit modal via 3 sequential API calls:
+   *  1. PUT /api/auth/internal/user/{id}  — update name/email/phone
+   *  2. PUT /api/wallet/admin/adjust      — set new balance
+   *  3. PUT /api/wallet/admin/lock        — set lock status
+   * Updates the user card in-place on success.
+   */
   saveWalletChanges(): void {
     if (!this.editingUser) return;
-
     const validationError = this.validateEditForm();
-    if (validationError) {
-      this.snackBar.open(validationError, 'Close', { duration: 3000 });
-      return;
-    }
+    if (validationError) { this.snackBar.open(validationError, 'Close', { duration: 3000 }); return; }
 
     this.saving = true;
 
+    // Step 1: update user profile
     this.api.put<any>(`/api/auth/internal/user/${this.editingUser.userId}`, {
       fullName: this.editFullName.trim(),
       email: this.editEmail.trim().toLowerCase(),
@@ -497,6 +528,7 @@ export class UserListComponent implements OnInit {
     }).subscribe({
       next: (userRes) => {
         if (userRes.success) {
+          // Step 2: adjust wallet balance
           this.api.put<any>('/api/wallet/admin/adjust', {
             userId: this.editingUser.userId,
             newBalance: this.newBalance,
@@ -504,11 +536,13 @@ export class UserListComponent implements OnInit {
           }).subscribe({
             next: (walletRes) => {
               if (walletRes.success) {
+                // Step 3: set wallet lock status
                 this.api.put<any>('/api/wallet/admin/lock', {
                   userId: this.editingUser.userId,
                   isLocked: this.editingLocked
                 }).subscribe({
                   next: () => {
+                    // Update the card in-place so the UI reflects the changes immediately
                     this.editingUser.fullName = this.editFullName.trim();
                     this.editingUser.email = this.editEmail.trim().toLowerCase();
                     this.editingUser.phoneNumber = this.editPhoneNumber.trim();
@@ -531,9 +565,8 @@ export class UserListComponent implements OnInit {
                 this.saving = false;
               }
             },
-            error: (err) => {
-              const msg = err?.error?.message ?? 'Failed to update wallet.';
-              this.snackBar.open(msg, 'Close', { duration: 3000 });
+            error: (err: any) => {
+              this.snackBar.open(err?.error?.message ?? 'Failed to update wallet.', 'Close', { duration: 3000 });
               this.saving = false;
             }
           });
@@ -542,53 +575,52 @@ export class UserListComponent implements OnInit {
           this.saving = false;
         }
       },
-      error: (err) => {
-        const msg = err?.error?.message ?? 'Failed to update user.';
-        this.snackBar.open(msg, 'Close', { duration: 3000 });
+      error: (err: any) => {
+        this.snackBar.open(err?.error?.message ?? 'Failed to update user.', 'Close', { duration: 3000 });
         this.saving = false;
       }
     });
   }
 
-  // Delete User
-  startDelete(user: any): void {
-    this.deletingUser = user;
-  }
+  // ── Delete modal ──────────────────────────────────────────────────────────
 
+  /** Opens the delete confirmation modal for the selected user */
+  startDelete(user: any): void { this.deletingUser = user; }
+
+  /**
+   * Permanently deletes the user after confirmation.
+   * Removes the user card from both arrays immediately on success.
+   * The backend also cascades the delete to KycDocument and TransactionPin.
+   */
   confirmDelete(): void {
     if (!this.deletingUser) return;
     this.deleting = true;
-
-    this.api.delete<any>(`/api/auth/internal/user/${this.deletingUser.userId}`)
-      .subscribe({
-        next: (res) => {
-          if (res.success) {
-            this.snackBar.open(
-              `${this.deletingUser.fullName} deleted successfully.`,
-              'Close', { duration: 3000 });
-            this.users = this.users.filter(u => u.userId !== this.deletingUser.userId);
-            this.filteredUsers = this.filteredUsers.filter(u => u.userId !== this.deletingUser.userId);
-            this.activeCount = this.users.filter(u => u.status === 'Active').length;
-            this.pendingCount = this.users.filter(u => u.status === 'Pending').length;
-            this.deletingUser = null;
-          } else {
-            this.snackBar.open(res.message, 'Close', { duration: 3000 });
-          }
-          this.deleting = false;
-        },
-        error: (err) => {
-          this.snackBar.open('Failed to delete user.', 'Close', { duration: 3000 });
-          this.deleting = false;
+    this.api.delete<any>(`/api/auth/internal/user/${this.deletingUser.userId}`).subscribe({
+      next: (res) => {
+        if (res.success) {
+          this.snackBar.open(`${this.deletingUser.fullName} deleted successfully.`, 'Close', { duration: 3000 });
+          // Remove from both arrays so the card disappears immediately
+          this.users = this.users.filter(u => u.userId !== this.deletingUser.userId);
+          this.filteredUsers = this.filteredUsers.filter(u => u.userId !== this.deletingUser.userId);
+          this.activeCount = this.users.filter(u => u.status === 'Active').length;
+          this.pendingCount = this.users.filter(u => u.status === 'Pending').length;
+          this.deletingUser = null;
+        } else {
+          this.snackBar.open(res.message, 'Close', { duration: 3000 });
         }
-      });
-  }
-  ngOnInit() {
-    this.loadUsers();
+        this.deleting = false;
+      },
+      error: () => {
+        this.snackBar.open('Failed to delete user.', 'Close', { duration: 3000 });
+        this.deleting = false;
+      }
+    });
   }
 
-  logout(): void {
-    this.auth.logout();
-  }
+  ngOnInit(): void { this.loadUsers(); }
+
+  /** Logs out the admin and redirects to /login */
+  logout(): void { this.auth.logout(); }
 }
 
 
