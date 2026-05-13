@@ -1,3 +1,23 @@
+// ============================================================
+// Program.cs — NotificationService
+// ------------------------------------------------------------
+// Application entry point and DI container configuration.
+// This file wires together every dependency the service needs:
+//   1. MongoDB repository (or in-memory fallback if MongoDB is not configured)
+//   2. Scoped NotificationService and EmailNotificationService
+//   3. Background NotificationConsumer (listens to "notifications" queue)
+//   4. JWT Bearer authentication (same key as AuthService)
+//   5. Swagger UI with JWT support
+//
+// MongoDB fallback:
+//   If MongoDB:ConnectionString is missing or starts with "__TRUNQO_" (placeholder),
+//   the service falls back to an in-memory repository so it can still run locally
+//   without a MongoDB connection. In-memory data is lost on restart.
+//
+// Middleware pipeline order (ORDER MATTERS):
+//   Swagger → ExceptionHandlingMiddleware → Authentication → Authorization → Controllers
+// ============================================================
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;

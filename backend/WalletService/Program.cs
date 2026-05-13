@@ -1,3 +1,21 @@
+// ============================================================
+// Program.cs — WalletService
+// ------------------------------------------------------------
+// Application entry point and DI container configuration.
+// This file wires together every dependency the service needs:
+//   1. SQL Server database via EF Core (Wallets + WalletTransactions tables)
+//   2. IHttpClientFactory for service-to-service HTTP calls to AuthService
+//   3. Scoped WalletService and WalletRepository
+//   4. Singleton RabbitMQ publisher (one connection for app lifetime)
+//   5. Background KycApprovalConsumer (auto-creates wallets on KYC approval)
+//   6. Background CampaignCashbackConsumer (credits cashback to wallets)
+//   7. JWT Bearer authentication (same key as AuthService — stateless validation)
+//   8. Swagger UI with JWT support for manual API testing
+//
+// Middleware pipeline order (ORDER MATTERS):
+//   Swagger → ExceptionHandlingMiddleware → Authentication → Authorization → Controllers
+// ============================================================
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;

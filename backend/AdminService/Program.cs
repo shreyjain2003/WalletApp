@@ -1,3 +1,26 @@
+// ============================================================
+// Program.cs — AdminService
+// ------------------------------------------------------------
+// Application entry point and DI container configuration.
+// This file wires together every dependency the service needs:
+//   1. SQL Server database via EF Core (KycReviews + SupportTickets tables)
+//   2. IHttpClientFactory for service-to-service HTTP calls to AuthService
+//   3. Scoped AdminService and AdminRepository
+//   4. Singleton RabbitMQ publisher (one connection for app lifetime)
+//   5. Background KycSubmissionConsumer (syncs KYC submissions from AuthService)
+//   6. JWT Bearer authentication (same key as AuthService)
+//   7. Swagger UI with JWT support
+//
+// Startup tasks:
+//   - Calls AuthService's internal /users endpoint to sync any KYC records
+//     that may have been submitted while AdminService was offline.
+//     This ensures the admin panel always shows the latest KYC submissions
+//     even if RabbitMQ messages were missed.
+//
+// Middleware pipeline order (ORDER MATTERS):
+//   Swagger → ExceptionHandlingMiddleware → Authentication → Authorization → Controllers
+// ============================================================
+
 using AdminService.Data;
 using AdminService.Middleware;
 using AdminService.Repositories;

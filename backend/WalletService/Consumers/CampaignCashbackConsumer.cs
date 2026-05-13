@@ -1,3 +1,30 @@
+// ============================================================
+// CampaignCashbackConsumer.cs — WalletService
+// ------------------------------------------------------------
+// Background service that listens to the "campaign_cashback" queue.
+// When RewardService evaluates a campaign and determines a cashback
+// reward applies, it publishes a CampaignCashbackEvent to this queue.
+// This consumer credits the cashback amount directly to the user's
+// wallet as a "cashback" transaction.
+//
+// Why is cashback handled here and not in RewardService?
+//   Cashback is real money — it must be credited to the wallet balance
+//   in WalletService's SQL Server database. RewardService only manages
+//   reward points, not wallet balances. This separation keeps each
+//   service responsible for its own data.
+//
+// Message flow:
+//   User makes a transfer that matches a cashback campaign rule
+//     → CampaignTransactionConsumer (RewardService) evaluates the rule
+//     → Publishes CampaignCashbackEvent to "campaign_cashback"
+//     → This consumer receives the event
+//     → Credits cashback to the user's wallet balance
+//     → Records a "cashback" transaction in WalletTransactions
+//
+// The cashback transaction appears in the user's history as type "cashback"
+// and is shown with a blue color and "Cashback Reward" label in the UI.
+// ============================================================
+
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
@@ -7,16 +34,15 @@ using WalletService.Repositories;
 
 namespace WalletService.Consumers;
 
-/// <summary>
-/// Listens to the campaign_cashback queue.
-/// When a campaign awards cashback, this consumer credits the amount
-/// directly to the user's wallet as a transaction.
-/// </summary>
+// BackgroundService runs ExecuteAsync once at app startup.
 public class CampaignCashbackConsumer : BackgroundService
 {
+    // IServiceProvider creates DI scopes per message for a fresh DbContext.
     private readonly IServiceProvider _services;
     private readonly IConfiguration _config;
     private readonly ILogger<CampaignCashbackConsumer> _logger;
+
+    // RabbitMQ connection and channel — held open for the app lifetime.
     private IConnection? _connection;
     private IModel? _channel;
 
@@ -30,6 +56,8 @@ public class CampaignCashbackConsumer : BackgroundService
         _logger = logger;
     }
 
+    // ── ExecuteAsync ─────────────────────────────────────────────────────────
+    // Connects to RabbitMQ and starts listening for cashback events.
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
@@ -45,9 +73,10 @@ public class CampaignCashbackConsumer : BackgroundService
             _connection = factory.CreateConnection();
             _channel = _connection.CreateModel();
 
+            // Declare the queue — idempotent, safe to call even if it already exists.
             _channel.QueueDeclare(
                 queue: "campaign_cashback",
-                durable: true,
+                durable: true,    // survives broker restart
                 exclusive: false,
                 autoDelete: false);
 
@@ -55,40 +84,52 @@ public class CampaignCashbackConsumer : BackgroundService
 
             consumer.Received += (_, ea) =>
             {
+                // Offload to thread pool — EventingBasicConsumer does not support async.
                 _ = Task.Run(async () =>
                 {
                     try
                     {
                         var json = Encoding.UTF8.GetString(ea.Body.ToArray());
+
+                        // Deserialize the cashback event from JSON.
                         var message = JsonSerializer.Deserialize<CampaignCashbackEvent>(
                             json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
+                        // Skip messages with zero or negative cashback amounts.
                         if (message == null || message.CashbackAmount <= 0)
                         {
                             _channel?.BasicAck(ea.DeliveryTag, false);
                             return;
                         }
 
+                        // Create a new DI scope for a fresh IWalletRepository.
                         using var scope = _services.CreateScope();
                         var repo = scope.ServiceProvider.GetRequiredService<IWalletRepository>();
 
+                        // Look up the user's wallet.
                         var wallet = await repo.GetWalletByUserIdAsync(message.UserId);
                         if (wallet == null)
                         {
+                            // Wallet not found — skip cashback but ack the message
+                            // (retrying won't help if the wallet genuinely doesn't exist).
                             _logger.LogWarning(
                                 "Cashback skipped — wallet not found for user {UserId}", message.UserId);
                             _channel?.BasicAck(ea.DeliveryTag, false);
                             return;
                         }
 
+                        // Credit the cashback amount to the wallet balance.
                         wallet.Balance += message.CashbackAmount;
                         wallet.UpdatedAt = DateTime.UtcNow;
 
+                        // Record the cashback as a transaction so it appears in history.
+                        // Reference format: CB-{CampaignCode}-{OriginalTransactionRef}
+                        // This links the cashback back to the transaction that triggered it.
                         var tx = new WalletTransaction
                         {
                             Id = Guid.NewGuid(),
                             WalletId = wallet.Id,
-                            Type = "cashback",
+                            Type = "cashback",                                          // shown as "Cashback Reward" in UI
                             Amount = message.CashbackAmount,
                             BalanceAfter = wallet.Balance,
                             Status = "Success",
@@ -98,22 +139,26 @@ public class CampaignCashbackConsumer : BackgroundService
                         };
 
                         await repo.AddTransactionAsync(tx);
-                        await repo.SaveChangesAsync();
+                        await repo.SaveChangesAsync(); // persist wallet balance update + transaction
 
                         _logger.LogInformation(
                             "Cashback Rs.{Amount} credited to user {UserId} for campaign {Code}",
                             message.CashbackAmount, message.UserId, message.CampaignCode);
 
+                        // Acknowledge — message processed successfully.
                         _channel?.BasicAck(ea.DeliveryTag, false);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Failed to process campaign_cashback event");
-                        _channel?.BasicNack(ea.DeliveryTag, false, true);
+
+                        // Requeue on failure — retry when the database is available again.
+                        _channel?.BasicNack(ea.DeliveryTag, false, requeue: true);
                     }
                 });
             };
 
+            // Start consuming with manual acknowledgement.
             _channel.BasicConsume(
                 queue: "campaign_cashback",
                 autoAck: false,
@@ -129,6 +174,7 @@ public class CampaignCashbackConsumer : BackgroundService
         return Task.CompletedTask;
     }
 
+    // ── Dispose ──────────────────────────────────────────────────────────────
     public override void Dispose()
     {
         _channel?.Dispose();
@@ -137,9 +183,12 @@ public class CampaignCashbackConsumer : BackgroundService
     }
 }
 
+// ── CampaignCashbackEvent ─────────────────────────────────────────────────────
+// Strongly-typed record matching the JSON published by RewardService's
+// CampaignService.EvaluateAndApplyAsync when a cashback rule is triggered.
 public record CampaignCashbackEvent(
-    Guid UserId,
-    string TransactionRef,
-    string CampaignCode,
-    decimal CashbackAmount
+    Guid UserId,            // The user who earned the cashback
+    string TransactionRef,  // The original transfer/topup reference that triggered the campaign
+    string CampaignCode,    // The campaign code (e.g. "FEST25") for the transaction note
+    decimal CashbackAmount  // The amount to credit to the wallet (in INR)
 );

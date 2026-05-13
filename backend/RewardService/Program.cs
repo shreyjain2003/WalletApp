@@ -1,3 +1,25 @@
+// ============================================================
+// Program.cs — RewardService
+// ------------------------------------------------------------
+// Application entry point and DI container configuration.
+// This file wires together every dependency the service needs:
+//   1. SQL Server database via EF Core (Rewards, RewardTransactions,
+//      Campaigns, CampaignRules, CampaignRedemptions tables)
+//   2. Scoped RewardService, RewardRepository, CampaignService, CampaignRepository
+//   3. Singleton RabbitMQ publisher (one connection for app lifetime)
+//   4. Background TransferEventConsumer (awards 10 points per transfer)
+//   5. Background CampaignTransactionConsumer (evaluates campaign rules)
+//   6. JWT Bearer authentication (same key as AuthService)
+//   7. Swagger UI with JWT support
+//
+// Startup tasks:
+//   - db.Database.MigrateAsync() applies any pending EF Core migrations
+//     (creates Campaigns, CampaignRules, CampaignRedemptions tables if missing)
+//
+// Middleware pipeline order (ORDER MATTERS):
+//   Swagger → ExceptionHandlingMiddleware → Authentication → Authorization → Controllers
+// ============================================================
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;

@@ -1,3 +1,25 @@
+// ============================================================
+// Program.cs — AuthService
+// ------------------------------------------------------------
+// Application entry point and DI container configuration.
+// This file wires together every dependency the service needs:
+//   1. SQL Server database via EF Core
+//   2. Scoped services (AuthService, repositories, TokenService)
+//   3. Singleton RabbitMQ publisher (one connection for app lifetime)
+//   4. Background KycDecisionConsumer (listens to kyc_decisions queue)
+//   5. JWT Bearer authentication (validates tokens on every request)
+//   6. Swagger UI with JWT support for manual API testing
+//
+// Startup tasks (run once before accepting requests):
+//   - Create TransactionPins table if it does not exist (raw SQL)
+//   - Create PasswordResetSessions table if it does not exist (raw SQL)
+//   - Migrate admin email from walletapp.com to trunqo.com (branding)
+//   - Seed the default admin user if no admin exists
+//
+// Middleware pipeline order (ORDER MATTERS):
+//   Swagger → ExceptionHandlingMiddleware → Authentication → Authorization → Controllers
+// ============================================================
+
 using AuthService.Data;
 using AuthService.Middleware;
 using AuthService.Repositories;
